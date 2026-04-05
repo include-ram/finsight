@@ -1,0 +1,86 @@
+# FinSight Docker Compose
+# Runs the Flask backend and Metabase together on the EC2 instance.
+# Both services connect to RDS (external PostgreSQL) — not a local DB container.
+#
+# Usage:
+#   cp .env.example .env   # fill in your values
+#   docker-compose up -d --build
+#   docker-compose logs -f
+
+version: "3.9"
+
+services:
+
+  # ── Flask API Backend ───────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: finsight-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      # These can also live in .env — listed here for visibility
+      - FLASK_ENV=production
+      - FLASK_PORT=5000
+      - TESSERACT_CMD=/usr/bin/tesseract
+    volumes:
+      # Mount a temp directory for OCR file processing
+      - /tmp/finsight:/tmp/finsight
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - finsight-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── Metabase Dashboard ──────────────────────────────────────────────────────
+  metabase:
+    image: metabase/metabase:latest
+    container_name: finsight-metabase
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Metabase's own internal database (for its config / questions)
+      # Using H2 file-based DB for simplicity — persisted via volume
+      - MB_DB_TYPE=h2
+      - MB_DB_FILE=/metabase-data/metabase.db
+      # Prevent Metabase from sending telemetry
+      - MB_SEND_EMAIL_ON_FIRST_LOGIN=false
+      - JAVA_OPTS=-Xmx512m   # limit heap — t3.large has 8GB but Metabase can be greedy
+    volumes:
+      - metabase-data:/metabase-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 60s   # Metabase takes ~30–60s to start
+    networks:
+      - finsight-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  metabase-data:
+    driver: local
+
+# ── Network ───────────────────────────────────────────────────────────────────
+networks:
+  finsight-net:
+    driver: bridge

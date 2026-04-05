@@ -1,0 +1,32 @@
+# FinSight Backend — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web framework
+flask==3.0.3
+werkzeug==3.0.3
+
+# AWS SDK — uses EC2 LabRole; no keys needed
+boto3==1.34.131
+botocore==1.34.131
+
+# PostgreSQL driver
+psycopg2-binary==2.9.9
+
+# OCR
+pytesseract==0.3.10
+Pillow==10.3.0
+
+# PDF → Image conversion (requires poppler system package)
+pdf2image==1.17.0
+
+# Environment variable management
+python-dotenv==1.0.1
+
+# HTTP client (used by Lambda trigger to call EC2 endpoint)
+requests==2.32.3
+
+# Data utilities
+python-dateutil==2.9.0
+
+# Production WSGI server
+gunicorn==22.0.0
