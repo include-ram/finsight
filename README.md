@@ -108,6 +108,7 @@ docker-compose up --build
 | `POST` | `/upload` | Upload a PDF document |
 | `GET` | `/documents` | List all processed documents |
 | `GET` | `/documents/<id>` | Get extracted data for a document |
+| `GET` | `/dashboard` | Aggregated spend summary |
 | `GET` | `/health` | Health check |
 
 ---
