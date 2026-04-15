@@ -496,7 +496,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'documents') loadDocuments();
-  if (name === 'dashboard') loadDashboard();
+  if (name === 'dashboard') setTimeout(loadDashboard, 50);
 }
 document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
@@ -718,6 +718,13 @@ function renderDashboard(data) {
 
 function destroyChart(id) {
   if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  // Replace canvas element to clear any stale state
+  const canvas = document.getElementById('chart-' + id);
+  if (canvas) {
+    const newCanvas = document.createElement('canvas');
+    newCanvas.id = 'chart-' + id;
+    canvas.parentNode.replaceChild(newCanvas, canvas);
+  }
 }
 
 const chartDefaults = {
