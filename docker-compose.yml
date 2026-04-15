@@ -44,6 +44,26 @@ services:
         max-size: "50m"
         max-file: "5"
 
+  # ── Frontend (nginx) ────────────────────────────────────────────────────────
+  frontend:
+    image: nginx:alpine
+    container_name: finsight-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend/index.html:/usr/share/nginx/html/index.html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+    networks:
+      - finsight-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ── Metabase Dashboard ──────────────────────────────────────────────────────
   metabase:
     image: metabase/metabase:latest

@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinSight — Financial Document Intelligence</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --surface2: #22263a;
+      --border:   #2e3248;
+      --accent:   #6c63ff;
+      --accent2:  #4ecca3;
+      --danger:   #ff6b6b;
+      --warn:     #ffd166;
+      --text:     #e2e8f0;
+      --muted:    #8892aa;
+      --radius:   12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo { font-size: 1.4rem; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+    .logo span { color: var(--accent2); }
+    .tagline { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 1rem; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+    .status-dot.online { background: var(--accent2); }
+    .status-label { font-size: 0.78rem; color: var(--muted); }
+
+    /* ── Nav Tabs ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      gap: 0;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 1rem 1.5rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Main layout ── */
+    main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+    }
+    .card-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
+
+    /* ── Upload Zone ── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(108, 99, 255, 0.05);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .upload-icon { font-size: 3rem; margin-bottom: 1rem; }
+    .upload-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .upload-sub { font-size: 0.85rem; color: var(--muted); }
+    .upload-sub strong { color: var(--accent2); }
+
+    /* ── Upload progress / result ── */
+    #upload-status { margin-top: 1.5rem; }
+    .progress-bar-wrap {
+      background: var(--surface2);
+      border-radius: 999px;
+      height: 6px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 999px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .upload-result {
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      font-size: 0.9rem;
+      margin-top: 0.75rem;
+    }
+    .upload-result.success { background: rgba(78, 204, 163, 0.1); border: 1px solid var(--accent2); color: var(--accent2); }
+    .upload-result.error   { background: rgba(255, 107, 107, 0.1); border: 1px solid var(--danger); color: var(--danger); }
+
+    /* ── Stats row ── */
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+    .stat-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+    .stat-value { font-size: 1.6rem; font-weight: 700; }
+    .stat-value.green { color: var(--accent2); }
+    .stat-value.red   { color: var(--danger); }
+    .stat-value.purple { color: var(--accent); }
+
+    /* ── Documents table ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    thead th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    td { padding: 0.875rem 1rem; vertical-align: middle; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2em 0.65em;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .badge.completed  { background: rgba(78,204,163,0.15); color: var(--accent2); }
+    .badge.processing { background: rgba(255,209,102,0.15); color: var(--warn); }
+    .badge.failed     { background: rgba(255,107,107,0.15); color: var(--danger); }
+    .badge.category   { background: rgba(108,99,255,0.15); color: var(--accent); }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--muted);
+    }
+    .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 700px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 2rem;
+      position: relative;
+    }
+    .modal-close {
+      position: absolute;
+      top: 1rem; right: 1rem;
+      background: var(--surface2);
+      border: none;
+      color: var(--muted);
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 1.5rem; padding-right: 2rem; }
+
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .field-item {
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+    }
+    .field-name { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.25rem; }
+    .field-val  { font-size: 0.95rem; font-weight: 600; }
+
+    .modal-section-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 1.25rem 0 0.75rem; }
+
+    .preview-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--accent);
+      font-size: 0.875rem;
+      text-decoration: none;
+      margin-top: 0.5rem;
+    }
+    .preview-link:hover { text-decoration: underline; }
+
+    /* ── Charts ── */
+    .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; }
+    .chart-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 1rem; }
+    .chart-container { position: relative; height: 240px; }
+
+    /* ── Misc ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.6rem 1.25rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.8rem; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+    .flex-between { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-row td { text-align: center; padding: 2rem; color: var(--muted); }
+
+    @media (max-width: 600px) {
+      main { padding: 1rem; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<header>
+  <div>
+    <div class="logo">Fin<span>Sight</span></div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot" id="status-dot"></div>
+    <span class="status-label" id="status-label">Connecting…</span>
+  </div>
+</header>
+
+<!-- ── Nav ────────────────────────────────────────────────── -->
+<nav>
+  <button class="tab-btn active" data-tab="upload">Upload</button>
+  <button class="tab-btn" data-tab="documents">Documents</button>
+  <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+</nav>
+
+<!-- ── Main ───────────────────────────────────────────────── -->
+<main>
+
+  <!-- ========== UPLOAD TAB ========== -->
+  <div class="tab-panel active" id="tab-upload">
+    <div class="card">
+      <div class="card-title">Upload Financial Document</div>
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" />
+        <div class="upload-icon">📄</div>
+        <div class="upload-title">Drag & drop your file here</div>
+        <div class="upload-sub">or click to browse &nbsp;·&nbsp; <strong>PDF, PNG, JPG, TIFF, BMP</strong> up to 50 MB</div>
+      </div>
+
+      <div id="upload-status" style="display:none;">
+        <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+        <div style="font-size:0.82rem; color:var(--muted);" id="progress-label">Uploading…</div>
+        <div id="upload-result"></div>
+      </div>
+    </div>
+
+    <!-- Recent uploads mini-list -->
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="flex-between">
+        <div class="card-title" style="margin-bottom:0;">Recent Uploads</div>
+        <button class="btn btn-outline btn-sm" onclick="loadDocuments(); switchTab('documents')">View all</button>
+      </div>
+      <div class="table-wrap" style="margin-top:1rem;">
+        <table id="recent-table">
+          <thead><tr>
+            <th>File</th><th>Status</th><th>Category</th><th>Uploaded</th>
+          </tr></thead>
+          <tbody id="recent-tbody">
+            <tr class="loading-row"><td colspan="4"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== DOCUMENTS TAB ========== -->
+  <div class="tab-panel" id="tab-documents">
+    <div class="flex-between">
+      <h2 style="font-size:1.1rem; font-weight:700;">All Documents</h2>
+      <div style="display:flex; gap:0.5rem;">
+        <select id="status-filter" class="btn btn-outline btn-sm" style="font-size:0.8rem; padding:0.4rem 0.9rem;">
+          <option value="">All statuses</option>
+          <option value="completed">Completed</option>
+          <option value="processing">Processing</option>
+          <option value="failed">Failed</option>
+        </select>
+        <button class="btn btn-sm" onclick="loadDocuments()">Refresh</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem; padding:0;">
+      <div class="table-wrap">
+        <table id="docs-table">
+          <thead><tr>
+            <th>File</th><th>Status</th><th>Category</th><th>Uploaded</th><th></th>
+          </tr></thead>
+          <tbody id="docs-tbody">
+            <tr class="loading-row"><td colspan="5"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:1rem; font-size:0.85rem; color:var(--muted);">
+      <span id="page-info">–</span>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="btn btn-outline btn-sm" id="prev-btn" onclick="changePage(-1)" disabled>← Prev</button>
+        <button class="btn btn-outline btn-sm" id="next-btn" onclick="changePage(1)"  disabled>Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== DASHBOARD TAB ========== -->
+  <div class="tab-panel" id="tab-dashboard">
+    <div class="flex-between">
+      <h2 style="font-size:1.1rem; font-weight:700;">Dashboard</h2>
+      <div style="display:flex; gap:0.5rem; align-items:center;">
+        <input type="month" id="month-filter" class="btn btn-outline btn-sm"
+               style="font-size:0.8rem; padding:0.35rem 0.75rem; background:var(--surface2);"
+               title="Filter by month" />
+        <button class="btn btn-sm" onclick="loadDashboard()">Refresh</button>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="stats-row" style="margin-top:1rem;" id="stat-cards">
+      <div class="stat-card"><div class="stat-label">Total Income</div><div class="stat-value green" id="stat-income">–</div></div>
+      <div class="stat-card"><div class="stat-label">Total Expenses</div><div class="stat-value red" id="stat-expenses">–</div></div>
+      <div class="stat-card"><div class="stat-label">Net Cash Flow</div><div class="stat-value purple" id="stat-net">–</div></div>
+      <div class="stat-card"><div class="stat-label">Documents</div><div class="stat-value" id="stat-docs">–</div></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid" id="charts-area">
+      <div class="chart-card">
+        <div class="chart-title">Spending by Category</div>
+        <div class="chart-container"><canvas id="chart-category"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Monthly Cash Flow (last 12 months)</div>
+        <div class="chart-container"><canvas id="chart-monthly"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Top Vendors</div>
+        <div class="chart-container"><canvas id="chart-vendors"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Document Detail Modal ────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-title" id="modal-title">Document Detail</div>
+    <div id="modal-body">Loading…</div>
+  </div>
+</div>
+
+<script>
+// ── Config ───────────────────────────────────────────────────────────────────
+// When served via nginx, calls go to the same origin — no CORS issue.
+// For local file:// access, point this to your backend URL.
+const API = '';   // empty = same origin (nginx proxy); set to 'http://localhost:5000' for direct
+
+// ── State ────────────────────────────────────────────────────────────────────
+let docsOffset = 0;
+const docsLimit = 20;
+let docsTotal   = 0;
+let charts = {};
+
+// ── Utility ──────────────────────────────────────────────────────────────────
+const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const fmtAmt = v => {
+  const n = parseFloat(v);
+  return isNaN(n) ? v : fmt.format(n);
+};
+const fmtDate = iso => {
+  if (!iso) return '–';
+  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return iso; }
+};
+const statusBadge = s => `<span class="badge ${s}">${s}</span>`;
+const catBadge    = c => c ? `<span class="badge category">${c}</span>` : '–';
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+// ── Health / status ──────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    await apiFetch('/health');
+    document.getElementById('status-dot').classList.add('online');
+    document.getElementById('status-label').textContent = 'API online';
+  } catch {
+    document.getElementById('status-label').textContent = 'API offline';
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (name === 'documents') loadDocuments();
+  if (name === 'dashboard') loadDashboard();
+}
+document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+const zone  = document.getElementById('upload-zone');
+const input = document.getElementById('file-input');
+
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+});
+input.addEventListener('change', () => { if (input.files.length) uploadFile(input.files[0]); });
+
+async function uploadFile(file) {
+  const statusDiv = document.getElementById('upload-status');
+  const bar       = document.getElementById('progress-bar');
+  const label     = document.getElementById('progress-label');
+  const result    = document.getElementById('upload-result');
+
+  statusDiv.style.display = 'block';
+  result.innerHTML = '';
+  bar.style.width = '0%';
+  label.textContent = `Uploading ${file.name}…`;
+
+  // Fake upload progress (XHR doesn't give real progress for small files)
+  let pct = 0;
+  const ticker = setInterval(() => {
+    pct = Math.min(pct + Math.random() * 15, 85);
+    bar.style.width = pct + '%';
+  }, 200);
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(API + '/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    clearInterval(ticker);
+    bar.style.width = '100%';
+
+    if (res.ok || res.status === 201) {
+      label.textContent = 'Processing complete!';
+      result.innerHTML = `
+        <div class="upload-result success">
+          ✅ <strong>${file.name}</strong> processed successfully.<br>
+          Category: <strong>${data.category || data.categories?.[0]?.category || '–'}</strong> &nbsp;·&nbsp;
+          ID: <code style="font-size:0.75rem;">${data.id || data.document_id}</code>
+          <br><a href="#" style="color:var(--accent2); font-size:0.82rem; margin-top:0.4rem; display:inline-block;"
+               onclick="switchTab('documents'); return false;">View in Documents →</a>
+        </div>`;
+      loadRecent();
+    } else {
+      label.textContent = 'Upload failed.';
+      result.innerHTML = `<div class="upload-result error">❌ ${data.error || 'Unknown error'}</div>`;
+    }
+  } catch (e) {
+    clearInterval(ticker);
+    bar.style.width = '0%';
+    label.textContent = 'Upload failed.';
+    result.innerHTML = `<div class="upload-result error">❌ ${e.message}</div>`;
+  }
+  // Reset file input so the same file can be re-uploaded
+  input.value = '';
+}
+
+// ── Recent uploads (Upload tab) ───────────────────────────────────────────────
+async function loadRecent() {
+  const tbody = document.getElementById('recent-tbody');
+  try {
+    const data = await apiFetch('/documents?limit=5&offset=0');
+    renderDocRows(data.documents || [], tbody, false);
+  } catch {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1rem;">Could not load recent uploads</td></tr>`;
+  }
+}
+
+// ── Documents tab ─────────────────────────────────────────────────────────────
+async function loadDocuments() {
+  const tbody  = document.getElementById('docs-tbody');
+  const status = document.getElementById('status-filter').value;
+  tbody.innerHTML = `<tr class="loading-row"><td colspan="5"><span class="spinner"></span></td></tr>`;
+
+  try {
+    const qs   = `?limit=${docsLimit}&offset=${docsOffset}` + (status ? `&status=${status}` : '');
+    const data = await apiFetch('/documents' + qs);
+    docsTotal  = data.total || 0;
+    renderDocRows(data.documents || [], tbody, true);
+    updatePagination();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:1.5rem;">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function renderDocRows(docs, tbody, showDetail) {
+  if (!docs.length) {
+    tbody.innerHTML = `<tr><td colspan="${showDetail ? 5 : 4}">
+      <div class="empty-state"><div class="icon">📂</div>No documents yet</div>
+    </td></tr>`;
+    return;
+  }
+  tbody.innerHTML = docs.map(d => {
+    const cat = d.category || d.categories?.[0]?.category || null;
+    return `<tr onclick="${showDetail ? `openDoc('${d.id}')` : ''}">
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${d.filename}">${d.filename}</td>
+      <td>${statusBadge(d.status)}</td>
+      <td>${catBadge(cat)}</td>
+      <td style="color:var(--muted)">${fmtDate(d.created_at)}</td>
+      ${showDetail ? `<td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openDoc('${d.id}')">View</button></td>` : ''}
+    </tr>`;
+  }).join('');
+}
+
+function updatePagination() {
+  const from = docsOffset + 1;
+  const to   = Math.min(docsOffset + docsLimit, docsTotal);
+  document.getElementById('page-info').textContent = docsTotal ? `${from}–${to} of ${docsTotal}` : 'No documents';
+  document.getElementById('prev-btn').disabled = docsOffset === 0;
+  document.getElementById('next-btn').disabled = docsOffset + docsLimit >= docsTotal;
+}
+
+function changePage(dir) {
+  docsOffset = Math.max(0, docsOffset + dir * docsLimit);
+  loadDocuments();
+}
+
+document.getElementById('status-filter').addEventListener('change', () => { docsOffset = 0; loadDocuments(); });
+
+// ── Document detail modal ─────────────────────────────────────────────────────
+async function openDoc(id) {
+  document.getElementById('modal-title').textContent = 'Loading…';
+  document.getElementById('modal-body').innerHTML = `<div style="text-align:center;padding:2rem;"><span class="spinner"></span></div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+
+  try {
+    const doc = await apiFetch(`/documents/${id}`);
+    renderModal(doc);
+  } catch (e) {
+    document.getElementById('modal-body').innerHTML = `<div class="upload-result error">❌ ${e.message}</div>`;
+  }
+}
+
+function renderModal(doc) {
+  document.getElementById('modal-title').textContent = doc.filename;
+
+  const cat     = doc.categories?.[0];
+  const fields  = doc.extracted_data || [];
+  const preview = doc.presigned_url;
+
+  const fieldsHtml = fields.length
+    ? `<div class="modal-section-title">Extracted Fields</div>
+       <div class="field-grid">${fields.map(f => `
+         <div class="field-item">
+           <div class="field-name">${f.field_name}</div>
+           <div class="field-val">${
+             f.field_name.includes('amount') || f.field_name.includes('total') || f.field_name.includes('balance')
+               ? fmtAmt(f.field_value)
+               : f.field_value
+           }</div>
+         </div>`).join('')}</div>`
+    : `<div style="color:var(--muted);font-size:0.875rem;margin:1rem 0;">No extracted fields available.</div>`;
+
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+      ${statusBadge(doc.status)}
+      ${cat ? catBadge(cat.category) : ''}
+      ${cat ? `<span class="badge" style="background:rgba(255,209,102,0.15);color:var(--warn);">confidence ${(cat.confidence * 100).toFixed(0)}%</span>` : ''}
+      <span style="color:var(--muted);font-size:0.8rem;margin-left:auto;">${fmtDate(doc.created_at)}</span>
+    </div>
+    ${fieldsHtml}
+    ${preview ? `
+      <div class="modal-section-title">Original File</div>
+      <a class="preview-link" href="${preview}" target="_blank" rel="noopener">
+        ↗ Open original document (S3 link, expires in 1 hour)
+      </a>` : ''}
+  `;
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay') || e === undefined) {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const month = document.getElementById('month-filter').value;
+  const qs    = month ? `?month=${month}` : '';
+
+  try {
+    const data = await apiFetch('/dashboard/summary' + qs);
+    renderDashboard(data);
+  } catch (e) {
+    ['stat-income','stat-expenses','stat-net','stat-docs'].forEach(id =>
+      document.getElementById(id).textContent = '–');
+    console.error('Dashboard error:', e);
+  }
+}
+
+function renderDashboard(data) {
+  const income   = data.total_income   ?? 0;
+  const expenses = data.total_expenses ?? 0;
+  const net      = income - expenses;
+
+  document.getElementById('stat-income').textContent   = fmt.format(income);
+  document.getElementById('stat-expenses').textContent = fmt.format(expenses);
+  document.getElementById('stat-net').textContent      = fmt.format(net);
+  document.getElementById('stat-net').style.color      = net >= 0 ? 'var(--accent2)' : 'var(--danger)';
+  document.getElementById('stat-docs').textContent     = data.document_count ?? '–';
+
+  drawCategoryChart(data.category_breakdown || {});
+  drawMonthlyChart(data.monthly_cash_flow   || []);
+  drawVendorChart(data.top_vendors          || []);
+}
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+const chartDefaults = {
+  color: '#8892aa',
+  plugins: { legend: { labels: { color: '#8892aa', font: { size: 11 } } } },
+};
+
+function drawCategoryChart(breakdown) {
+  destroyChart('category');
+  const labels = Object.keys(breakdown);
+  const values = Object.values(breakdown);
+  if (!labels.length) return;
+
+  const ctx = document.getElementById('chart-category').getContext('2d');
+  charts['category'] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: ['#6c63ff','#4ecca3','#ff6b6b','#ffd166','#a78bfa','#34d399','#f87171','#fb923c'],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#8892aa', font: { size: 11 }, padding: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt.format(ctx.parsed)}` } }
+      }
+    }
+  });
+}
+
+function drawMonthlyChart(monthly) {
+  destroyChart('monthly');
+  if (!monthly.length) return;
+
+  const labels   = monthly.map(m => m.month);
+  const income   = monthly.map(m => m.income   ?? 0);
+  const expenses = monthly.map(m => m.expenses ?? 0);
+
+  const ctx = document.getElementById('chart-monthly').getContext('2d');
+  charts['monthly'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Income',   data: income,   backgroundColor: 'rgba(78,204,163,0.7)', borderRadius: 4 },
+        { label: 'Expenses', data: expenses, backgroundColor: 'rgba(255,107,107,0.7)', borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8892aa', font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } },
+        y: { ticks: { color: '#8892aa', callback: v => '$' + v.toLocaleString() }, grid: { color: '#2e3248' } }
+      }
+    }
+  });
+}
+
+function drawVendorChart(vendors) {
+  destroyChart('vendors');
+  if (!vendors.length) return;
+
+  const labels = vendors.map(v => v.vendor || v.name);
+  const values = vendors.map(v => v.total  || v.amount);
+
+  const ctx = document.getElementById('chart-vendors').getContext('2d');
+  charts['vendors'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Total Spend',
+        data: values,
+        backgroundColor: 'rgba(108,99,255,0.7)',
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8892aa', callback: v => '$' + v.toLocaleString() }, grid: { color: '#2e3248' } },
+        y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } }
+      }
+    }
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+checkHealth();
+loadRecent();
+</script>
+</body>
+</html>
