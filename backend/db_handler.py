@@ -363,9 +363,10 @@ class DBHandler:
         ]
 
         # ── Document counts by status ─────────────────────────────────────────
+        user_filter_simple = "AND user_id = %s" if user_id else ""
         status_query = f"""
             SELECT status, COUNT(*) AS cnt FROM documents
-            WHERE 1=1 {user_filter_sql} GROUP BY status
+            WHERE 1=1 {user_filter_simple} GROUP BY status
         """
         status_rows = self._execute(status_query, build_params(), fetch="all") or []
         doc_counts = {r["status"]: r["cnt"] for r in status_rows}
