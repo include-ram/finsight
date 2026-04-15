@@ -9,9 +9,10 @@ import uuid
 import logging
 import tempfile
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 
 from s3_handler import S3Handler
@@ -29,8 +30,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # allow requests from frontend (nginx or local dev)
+CORS(app, supports_credentials=True)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB upload cap
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "finsight-dev-secret-change-in-prod")
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "tiff", "bmp"}
@@ -51,6 +53,79 @@ def error_response(message: str, status: int = 400):
     return jsonify({"error": message}), status
 
 
+# ── Auth helpers ─────────────────────────────────────────────────────────────
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            return error_response("Not authenticated", 401)
+        return f(*args, **kwargs)
+    return decorated
+
+def current_user_id():
+    return session.get("user_id")
+
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+@app.route("/auth/register", methods=["POST"])
+def register():
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password") or ""
+    if not username or not password:
+        return error_response("Username and password are required")
+    if len(username) < 3:
+        return error_response("Username must be at least 3 characters")
+    if len(password) < 6:
+        return error_response("Password must be at least 6 characters")
+    try:
+        existing = db._execute("SELECT id FROM users WHERE username = %s", (username,), fetch="one")
+        if existing:
+            return error_response("Username already taken")
+        pw_hash = generate_password_hash(password)
+        row = db._execute(
+            "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id, username",
+            (username, pw_hash), fetch="one"
+        )
+        session["user_id"] = str(row["id"])
+        session["username"] = row["username"]
+        return jsonify({"id": str(row["id"]), "username": row["username"]}), 201
+    except Exception as exc:
+        logger.exception("Register failed")
+        return error_response(f"Registration failed: {exc}", 500)
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password") or ""
+    try:
+        row = db._execute("SELECT id, username, password_hash FROM users WHERE username = %s", (username,), fetch="one")
+        if not row or not check_password_hash(row["password_hash"], password):
+            return error_response("Invalid username or password", 401)
+        session["user_id"] = str(row["id"])
+        session["username"] = row["username"]
+        return jsonify({"id": str(row["id"]), "username": row["username"]})
+    except Exception as exc:
+        logger.exception("Login failed")
+        return error_response(f"Login failed: {exc}", 500)
+
+
+@app.route("/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/auth/me", methods=["GET"])
+def me():
+    if "user_id" not in session:
+        return error_response("Not authenticated", 401)
+    return jsonify({"id": session["user_id"], "username": session["username"]})
+
+
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.route("/health", methods=["GET"])
 def health():
@@ -60,6 +135,7 @@ def health():
 
 # ── Upload endpoint ───────────────────────────────────────────────────────────
 @app.route("/upload", methods=["POST"])
+@login_required
 def upload_document():
     """
     POST /upload
@@ -103,6 +179,7 @@ def upload_document():
             filename=original_name,
             s3_key=s3_key,
             status="processing",
+            user_id=current_user_id(),
         )
     except Exception as exc:
         logger.exception("DB insert failed")
@@ -231,18 +308,19 @@ def process_document():
 
 # ── Document listing ──────────────────────────────────────────────────────────
 @app.route("/documents", methods=["GET"])
+@login_required
 def list_documents():
     """
     GET /documents?status=completed&limit=50&offset=0
     Returns paginated list of all documents with their categories.
     """
-    status = request.args.get("status")          # optional filter
+    status = request.args.get("status")
     limit = int(request.args.get("limit", 50))
     offset = int(request.args.get("offset", 0))
 
     try:
-        docs = db.get_all_documents(status=status, limit=limit, offset=offset)
-        total = db.count_documents(status=status)
+        docs = db.get_all_documents(status=status, limit=limit, offset=offset, user_id=current_user_id())
+        total = db.count_documents(status=status, user_id=current_user_id())
         return jsonify({"total": total, "limit": limit, "offset": offset, "documents": docs})
     except Exception as exc:
         logger.exception("Failed to list documents")
@@ -251,6 +329,7 @@ def list_documents():
 
 # ── Single document detail ────────────────────────────────────────────────────
 @app.route("/documents/<doc_id>", methods=["GET"])
+@login_required
 def get_document(doc_id: str):
     """
     GET /documents/<id>
@@ -286,6 +365,7 @@ def get_document(doc_id: str):
 
 # ── Delete document ──────────────────────────────────────────────────────────
 @app.route("/documents/<doc_id>", methods=["DELETE"])
+@login_required
 def delete_document(doc_id: str):
     """
     DELETE /documents/<id>
@@ -319,6 +399,7 @@ def delete_document(doc_id: str):
 
 # ── Dashboard summary ─────────────────────────────────────────────────────────
 @app.route("/dashboard/summary", methods=["GET"])
+@login_required
 def dashboard_summary():
     """
     GET /dashboard/summary?month=2024-03
@@ -331,7 +412,7 @@ def dashboard_summary():
     month_filter = request.args.get("month")  # optional YYYY-MM
 
     try:
-        summary = db.get_summary_stats(month=month_filter)
+        summary = db.get_summary_stats(month=month_filter, user_id=current_user_id())
         return jsonify(summary)
     except Exception as exc:
         logger.exception("Failed to generate dashboard summary")

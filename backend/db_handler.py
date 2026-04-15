@@ -130,15 +130,16 @@ class DBHandler:
         filename: str,
         s3_key: str,
         status: str = "processing",
+        user_id: str | None = None,
     ) -> None:
         """Insert a new document record."""
         self._execute(
             """
-            INSERT INTO documents (id, filename, s3_key, upload_date, status)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO documents (id, filename, s3_key, upload_date, status, user_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             """,
-            (doc_id, filename, s3_key, datetime.utcnow(), status),
+            (doc_id, filename, s3_key, datetime.utcnow(), status, user_id),
         )
         logger.debug("Inserted document %s", doc_id)
 
@@ -172,63 +173,42 @@ class DBHandler:
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        user_id: str | None = None,
     ) -> list[dict]:
-        """
-        Fetch a paginated list of documents, optionally filtered by status.
-        Also joins in the primary category for each document.
-        """
-        if status:
-            rows = self._execute(
-                """
-                SELECT d.*, c.category, c.confidence AS category_confidence
-                FROM documents d
-                LEFT JOIN LATERAL (
-                    SELECT category, confidence
-                    FROM categories
-                    WHERE document_id = d.id
-                    ORDER BY confidence DESC
-                    LIMIT 1
-                ) c ON TRUE
-                WHERE d.status = %s
-                ORDER BY d.upload_date DESC
-                LIMIT %s OFFSET %s
-                """,
-                (status, limit, offset),
-                fetch="all",
-            )
-        else:
-            rows = self._execute(
-                """
-                SELECT d.*, c.category, c.confidence AS category_confidence
-                FROM documents d
-                LEFT JOIN LATERAL (
-                    SELECT category, confidence
-                    FROM categories
-                    WHERE document_id = d.id
-                    ORDER BY confidence DESC
-                    LIMIT 1
-                ) c ON TRUE
-                ORDER BY d.upload_date DESC
-                LIMIT %s OFFSET %s
-                """,
-                (limit, offset),
-                fetch="all",
-            )
+        """Fetch a paginated list of documents scoped to a user."""
+        p: list = []
+        if user_id: p.append(user_id)
+        if status:  p.append(status)
+        p += [limit, offset]
+        rows = self._execute(
+            f"""
+            SELECT d.*, c.category, c.confidence AS category_confidence
+            FROM documents d
+            LEFT JOIN LATERAL (
+                SELECT category, confidence FROM categories
+                WHERE document_id = d.id ORDER BY confidence DESC LIMIT 1
+            ) c ON TRUE
+            WHERE 1=1
+            {"AND d.user_id = %s" if user_id else ""}
+            {"AND d.status = %s" if status else ""}
+            ORDER BY d.upload_date DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(p),
+            fetch="all",
+        )
         return [dict(r) for r in rows] if rows else []
 
-    def count_documents(self, status: str | None = None) -> int:
-        """Return the total count of documents (for pagination)."""
-        if status:
-            row = self._execute(
-                "SELECT COUNT(*) AS cnt FROM documents WHERE status = %s",
-                (status,),
-                fetch="one",
-            )
-        else:
-            row = self._execute(
-                "SELECT COUNT(*) AS cnt FROM documents",
-                fetch="one",
-            )
+    def count_documents(self, status: str | None = None, user_id: str | None = None) -> int:
+        """Return the total count of documents for a user."""
+        p = [v for v in [user_id, status] if v is not None]
+        row = self._execute(
+            f"""SELECT COUNT(*) AS cnt FROM documents WHERE 1=1
+            {"AND user_id = %s" if user_id else ""}
+            {"AND status = %s" if status else ""}""",
+            tuple(p),
+            fetch="one",
+        )
         return row["cnt"] if row else 0
 
     # ── Extracted data CRUD ───────────────────────────────────────────────────
@@ -286,16 +266,23 @@ class DBHandler:
         return [dict(r) for r in rows] if rows else []
 
     # ── Summary / analytics ───────────────────────────────────────────────────
-    def get_summary_stats(self, month: str | None = None) -> dict[str, Any]:
+    def get_summary_stats(self, month: str | None = None, user_id: str | None = None) -> dict[str, Any]:
         """
         Return aggregated financial stats for the dashboard.
         month: optional "YYYY-MM" filter.
         """
         month_filter_sql = ""
-        params: tuple = ()
+        user_filter_sql = "AND d.user_id = %s" if user_id else ""
+        params: tuple = tuple(v for v in [user_id, month] if v is not None) if (user_id or month) else ()
+        # Rebuild params in correct order for each query
+        def build_params(*extras):
+            p = []
+            if user_id: p.append(user_id)
+            p.extend(extras)
+            return tuple(p)
+
         if month:
             month_filter_sql = "AND TO_CHAR(d.upload_date, 'YYYY-MM') = %s"
-            params = (month,)
 
         # ── Total income vs expenses ──────────────────────────────────────────
         totals_query = f"""
@@ -308,11 +295,12 @@ class DBHandler:
             WHERE e.field_name = 'total_amount'
               AND e.field_value ~ '^[0-9]+(\\.[0-9]+)?$'
               AND d.status = 'completed'
+              {user_filter_sql}
               {month_filter_sql}
             GROUP BY c.category
             ORDER BY total DESC
         """
-        category_rows = self._execute(totals_query, params, fetch="all") or []
+        category_rows = self._execute(totals_query, build_params(*([month] if month else [])), fetch="all") or []
 
         by_category: dict[str, float] = {}
         total_income = 0.0
@@ -327,7 +315,7 @@ class DBHandler:
                 total_expenses += total
 
         # ── Monthly cash flow (last 12 months) ────────────────────────────────
-        monthly_query = """
+        monthly_query = f"""
             SELECT
                 TO_CHAR(d.upload_date, 'YYYY-MM') AS month,
                 SUM(CASE WHEN c.category = 'Income' THEN CAST(e.field_value AS NUMERIC) ELSE 0 END) AS income,
@@ -338,11 +326,12 @@ class DBHandler:
             WHERE e.field_name = 'total_amount'
               AND e.field_value ~ '^[0-9]+(\\.[0-9]+)?$'
               AND d.status = 'completed'
+              {user_filter_sql}
               AND d.upload_date >= NOW() - INTERVAL '12 months'
             GROUP BY TO_CHAR(d.upload_date, 'YYYY-MM')
             ORDER BY month ASC
         """
-        monthly_rows = self._execute(monthly_query, fetch="all") or []
+        monthly_rows = self._execute(monthly_query, build_params(), fetch="all") or []
         monthly_cashflow = [
             {
                 "month": r["month"],
@@ -362,23 +351,23 @@ class DBHandler:
             JOIN documents d ON e.document_id = d.id
             WHERE e.field_name = 'vendor_name'
               AND d.status = 'completed'
+              {user_filter_sql}
               {month_filter_sql}
             GROUP BY e.field_value
             ORDER BY doc_count DESC
             LIMIT 10
         """
-        vendor_rows = self._execute(vendor_query, params, fetch="all") or []
+        vendor_rows = self._execute(vendor_query, build_params(*([month] if month else [])), fetch="all") or []
         top_vendors = [
             {"vendor": r["vendor"], "count": r["doc_count"]} for r in vendor_rows
         ]
 
         # ── Document counts by status ─────────────────────────────────────────
-        status_query = """
-            SELECT status, COUNT(*) AS cnt
-            FROM documents
-            GROUP BY status
+        status_query = f"""
+            SELECT status, COUNT(*) AS cnt FROM documents
+            WHERE 1=1 {user_filter_sql} GROUP BY status
         """
-        status_rows = self._execute(status_query, fetch="all") or []
+        status_rows = self._execute(status_query, build_params(), fetch="all") or []
         doc_counts = {r["status"]: r["cnt"] for r in status_rows}
 
         return {

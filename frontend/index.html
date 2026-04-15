@@ -293,6 +293,40 @@
 
     .loading-row td { text-align: center; padding: 2rem; color: var(--muted); }
 
+    /* ── Auth overlay ── */
+    .auth-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: var(--bg);
+      z-index: 300;
+      align-items: center;
+      justify-content: center;
+    }
+    .auth-overlay.open { display: flex; }
+    .auth-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 400px;
+    }
+    .auth-logo { font-size: 1.8rem; font-weight: 700; color: var(--accent); margin-bottom: 0.25rem; }
+    .auth-logo span { color: var(--accent2); }
+    .auth-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 2rem; }
+    .auth-tabs { display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+    .auth-tab { background: none; border: none; color: var(--muted); font-size: 0.9rem; font-weight: 500; padding: 0.6rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .form-group input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.65rem 0.9rem; color: var(--text);
+      font-size: 0.9rem; outline: none;
+    }
+    .form-group input:focus { border-color: var(--accent); }
+    .auth-error { background: rgba(255,107,107,0.1); border: 1px solid var(--danger); color: var(--danger); border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.85rem; margin-bottom: 1rem; display: none; }
+
     @media (max-width: 600px) {
       main { padding: 1rem; }
       .stats-row { grid-template-columns: 1fr 1fr; }
@@ -300,6 +334,29 @@
   </style>
 </head>
 <body>
+
+<!-- ── Auth overlay ──────────────────────────────────────────── -->
+<div class="auth-overlay open" id="auth-overlay">
+  <div class="auth-box">
+    <div class="auth-logo">Fin<span>Sight</span></div>
+    <div class="auth-sub">Financial Document Intelligence</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="showAuthTab('login')">Login</button>
+      <button class="auth-tab" onclick="showAuthTab('register')">Register</button>
+    </div>
+    <div id="auth-error" class="auth-error"></div>
+    <div id="auth-form-login">
+      <div class="form-group"><label>Username</label><input id="login-user" type="text" placeholder="your username" autocomplete="username" /></div>
+      <div class="form-group"><label>Password</label><input id="login-pass" type="password" placeholder="••••••" autocomplete="current-password" /></div>
+      <button class="btn" style="width:100%;justify-content:center;margin-top:0.5rem;" onclick="doLogin()">Login</button>
+    </div>
+    <div id="auth-form-register" style="display:none;">
+      <div class="form-group"><label>Username</label><input id="reg-user" type="text" placeholder="choose a username" autocomplete="username" /></div>
+      <div class="form-group"><label>Password</label><input id="reg-pass" type="password" placeholder="at least 6 characters" autocomplete="new-password" /></div>
+      <button class="btn" style="width:100%;justify-content:center;margin-top:0.5rem;" onclick="doRegister()">Create Account</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Header ─────────────────────────────────────────────── -->
 <header>
@@ -309,6 +366,8 @@
   <div class="header-right">
     <div class="status-dot" id="status-dot"></div>
     <span class="status-label" id="status-label">Connecting…</span>
+    <span id="username-badge" style="display:none;font-size:0.8rem;color:var(--accent2);font-weight:600;"></span>
+    <button id="logout-btn" class="btn btn-outline btn-sm" style="display:none;" onclick="doLogout()">Logout</button>
   </div>
 </header>
 
@@ -472,7 +531,11 @@ const statusBadge = s => `<span class="badge ${s}">${s}</span>`;
 const catBadge    = c => c ? `<span class="badge category">${c}</span>` : '–';
 
 async function apiFetch(path, opts = {}) {
-  const res = await fetch(API + path, opts);
+  const res = await fetch(API + path, { credentials: 'include', ...opts });
+  if (res.status === 401) {
+    document.getElementById('auth-overlay').classList.add('open');
+    throw new Error('Not authenticated');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || res.statusText);
@@ -831,6 +894,63 @@ function drawVendorChart(vendors) {
   });
 }
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+function showAuthTab(tab) {
+  document.querySelectorAll('.auth-tab').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === tab));
+  document.getElementById('auth-form-login').style.display    = tab === 'login'    ? '' : 'none';
+  document.getElementById('auth-form-register').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function onLoggedIn(user) {
+  document.getElementById('auth-overlay').classList.remove('open');
+  document.getElementById('username-badge').textContent = '👤 ' + user.username;
+  document.getElementById('username-badge').style.display = '';
+  document.getElementById('logout-btn').style.display = '';
+  loadRecent();
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-user').value.trim();
+  const password = document.getElementById('login-pass').value;
+  if (!username || !password) return showAuthError('Enter username and password');
+  try {
+    const user = await apiFetch('/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username, password}), credentials: 'include'
+    });
+    onLoggedIn(user);
+  } catch (e) { showAuthError(e.message); }
+}
+
+async function doRegister() {
+  const username = document.getElementById('reg-user').value.trim();
+  const password = document.getElementById('reg-pass').value;
+  if (!username || !password) return showAuthError('Enter username and password');
+  try {
+    const user = await apiFetch('/auth/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username, password}), credentials: 'include'
+    });
+    onLoggedIn(user);
+  } catch (e) { showAuthError(e.message); }
+}
+
+async function doLogout() {
+  await apiFetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+  document.getElementById('auth-overlay').classList.add('open');
+  document.getElementById('username-badge').style.display = 'none';
+  document.getElementById('logout-btn').style.display = 'none';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+}
+
 // ── Delete document ───────────────────────────────────────────────────────────
 async function deleteDoc(id, filename) {
   if (!confirm(`Delete "${filename}"?\n\nThis will remove the file from S3 and all extracted data. This cannot be undone.`)) return;
@@ -845,8 +965,18 @@ async function deleteDoc(id, filename) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+// Enter key on login/register forms
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (document.getElementById('auth-form-login').style.display !== 'none') doLogin();
+  else doRegister();
+});
+
 checkHealth();
-loadRecent();
+// Check if already logged in (existing session cookie)
+apiFetch('/auth/me', { credentials: 'include' })
+  .then(user => onLoggedIn(user))
+  .catch(() => { /* not logged in — overlay stays open */ });
 </script>
 </body>
 </html>
