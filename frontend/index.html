@@ -707,11 +707,13 @@ function renderDashboard(data) {
   document.getElementById('stat-expenses').textContent = fmt.format(expenses);
   document.getElementById('stat-net').textContent      = fmt.format(net);
   document.getElementById('stat-net').style.color      = net >= 0 ? 'var(--accent2)' : 'var(--danger)';
-  document.getElementById('stat-docs').textContent     = data.document_count ?? '–';
+  const counts = data.document_counts || {};
+  const totalDocs = Object.values(counts).reduce((a, b) => a + Number(b), 0);
+  document.getElementById('stat-docs').textContent = totalDocs || '–';
 
-  drawCategoryChart(data.category_breakdown || {});
-  drawMonthlyChart(data.monthly_cash_flow   || []);
-  drawVendorChart(data.top_vendors          || []);
+  drawCategoryChart(data.by_category         || {});
+  drawMonthlyChart(data.monthly_cashflow     || []);
+  drawVendorChart(data.top_vendors           || []);
 }
 
 function destroyChart(id) {
@@ -786,7 +788,7 @@ function drawVendorChart(vendors) {
   if (!vendors.length) return;
 
   const labels = vendors.map(v => v.vendor || v.name);
-  const values = vendors.map(v => v.total  || v.amount);
+  const values = vendors.map(v => v.count  || v.total || v.amount);
 
   const ctx = document.getElementById('chart-vendors').getContext('2d');
   charts['vendors'] = new Chart(ctx, {
