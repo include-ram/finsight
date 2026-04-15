@@ -607,7 +607,10 @@ function renderDocRows(docs, tbody, showDetail) {
       <td>${statusBadge(d.status)}</td>
       <td>${catBadge(cat)}</td>
       <td style="color:var(--muted)">${fmtDate(d.created_at)}</td>
-      ${showDetail ? `<td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openDoc('${d.id}')">View</button></td>` : ''}
+      ${showDetail ? `<td style="display:flex;gap:0.4rem;">
+        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openDoc('${d.id}')">View</button>
+        <button class="btn btn-sm" style="background:var(--danger);opacity:0.85;" onclick="event.stopPropagation();deleteDoc('${d.id}','${d.filename.replace(/'/g,"\\'")}')">Delete</button>
+      </td>` : ''}
     </tr>`;
   }).join('');
 }
@@ -674,6 +677,12 @@ function renderModal(doc) {
       <a class="preview-link" href="${preview}" target="_blank" rel="noopener">
         ↗ Open original document (S3 link, expires in 1 hour)
       </a>` : ''}
+    <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);">
+      <button class="btn btn-sm" style="background:var(--danger);"
+        onclick="deleteDoc('${doc.id}','${doc.filename.replace(/'/g,"\\'")}')">
+        Delete Document
+      </button>
+    </div>
   `;
 }
 
@@ -820,6 +829,19 @@ function drawVendorChart(vendors) {
       }
     }
   });
+}
+
+// ── Delete document ───────────────────────────────────────────────────────────
+async function deleteDoc(id, filename) {
+  if (!confirm(`Delete "${filename}"?\n\nThis will remove the file from S3 and all extracted data. This cannot be undone.`)) return;
+  try {
+    await apiFetch(`/documents/${id}`, { method: 'DELETE' });
+    closeModal();
+    loadRecent();
+    loadDocuments();
+  } catch (e) {
+    alert(`Delete failed: ${e.message}`);
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

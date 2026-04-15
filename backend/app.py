@@ -284,6 +284,39 @@ def get_document(doc_id: str):
     return jsonify(doc)
 
 
+# ── Delete document ──────────────────────────────────────────────────────────
+@app.route("/documents/<doc_id>", methods=["DELETE"])
+def delete_document(doc_id: str):
+    """
+    DELETE /documents/<id>
+    Removes the document from S3 and deletes all DB records (cascades to
+    extracted_data and categories).
+    """
+    try:
+        doc = db.get_document_by_id(doc_id)
+    except Exception as exc:
+        return error_response(f"Database error: {exc}", 500)
+
+    if not doc:
+        return error_response("Document not found", 404)
+
+    # Delete from S3 (non-fatal if object already gone)
+    try:
+        s3.delete_object(doc["s3_key"])
+    except Exception as exc:
+        logger.warning("S3 delete failed for %s (continuing): %s", doc["s3_key"], exc)
+
+    # Delete from DB (cascades to extracted_data + categories)
+    try:
+        db._execute("DELETE FROM documents WHERE id = %s", (doc_id,))
+    except Exception as exc:
+        logger.exception("DB delete failed for %s", doc_id)
+        return error_response(f"Database error: {exc}", 500)
+
+    logger.info("Deleted document %s (%s)", doc_id, doc["filename"])
+    return jsonify({"deleted": True, "id": doc_id}), 200
+
+
 # ── Dashboard summary ─────────────────────────────────────────────────────────
 @app.route("/dashboard/summary", methods=["GET"])
 def dashboard_summary():
