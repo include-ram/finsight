@@ -363,6 +363,40 @@ def get_document(doc_id: str):
     return jsonify(doc)
 
 
+# ── CSV export ───────────────────────────────────────────────────────────────
+@app.route("/documents/export", methods=["GET"])
+@login_required
+def export_documents():
+    """
+    GET /documents/export
+    Downloads all of the current user's documents as a CSV file.
+    """
+    import csv, io
+    from flask import Response
+
+    docs = db.get_all_documents(limit=10000, user_id=current_user_id())
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["filename", "upload_date", "status", "category", "vendor", "amount", "document_date"])
+    for doc in docs:
+        fields = {f["field_name"]: f["field_value"] for f in db.get_extracted_data(doc["id"])}
+        writer.writerow([
+            doc["filename"],
+            str(doc.get("upload_date", ""))[:19],
+            doc.get("status", ""),
+            doc.get("category", ""),
+            fields.get("vendor_name", ""),
+            fields.get("total_amount", ""),
+            fields.get("primary_date", ""),
+        ])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=finsight_export.csv"},
+    )
+
+
 # ── Delete document ──────────────────────────────────────────────────────────
 @app.route("/documents/<doc_id>", methods=["DELETE"])
 @login_required

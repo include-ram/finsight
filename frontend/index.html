@@ -422,25 +422,38 @@
   <div class="tab-panel" id="tab-documents">
     <div class="flex-between">
       <h2 style="font-size:1.1rem; font-weight:700;">All Documents</h2>
-      <div style="display:flex; gap:0.5rem;">
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
         <select id="status-filter" class="btn btn-outline btn-sm" style="font-size:0.8rem; padding:0.4rem 0.9rem;">
           <option value="">All statuses</option>
           <option value="completed">Completed</option>
           <option value="processing">Processing</option>
           <option value="failed">Failed</option>
         </select>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
         <button class="btn btn-sm" onclick="loadDocuments()">Refresh</button>
       </div>
     </div>
 
-    <div class="card" style="margin-top:1rem; padding:0;">
+    <!-- Bulk action bar (hidden until rows selected) -->
+    <div id="bulk-bar" style="display:none; margin-top:0.75rem; background:rgba(108,99,255,0.1); border:1px solid var(--accent); border-radius:8px; padding:0.6rem 1rem; display:none; align-items:center; gap:1rem;">
+      <span id="bulk-count" style="font-size:0.85rem; color:var(--accent); font-weight:600;"></span>
+      <button class="btn btn-sm" style="background:var(--danger);" onclick="bulkDelete()">Delete Selected</button>
+      <button class="btn btn-outline btn-sm" onclick="clearSelection()">Clear</button>
+    </div>
+
+    <div class="card" style="margin-top:0.75rem; padding:0;">
       <div class="table-wrap">
         <table id="docs-table">
           <thead><tr>
-            <th>File</th><th>Status</th><th>Category</th><th>Uploaded</th><th></th>
+            <th style="width:36px;"><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" style="cursor:pointer;" /></th>
+            <th class="sortable" onclick="sortBy('filename')" style="cursor:pointer;">File <span id="sort-filename"></span></th>
+            <th class="sortable" onclick="sortBy('status')" style="cursor:pointer;">Status <span id="sort-status"></span></th>
+            <th class="sortable" onclick="sortBy('category')" style="cursor:pointer;">Category <span id="sort-category"></span></th>
+            <th class="sortable" onclick="sortBy('upload_date')" style="cursor:pointer;">Uploaded <span id="sort-upload_date">↓</span></th>
+            <th></th>
           </tr></thead>
           <tbody id="docs-tbody">
-            <tr class="loading-row"><td colspan="5"><span class="spinner"></span></td></tr>
+            <tr class="loading-row"><td colspan="6"><span class="spinner"></span></td></tr>
           </tbody>
         </table>
       </div>
@@ -486,6 +499,10 @@
         <div class="chart-title">Monthly Cash Flow (last 12 months)</div>
         <div class="chart-container"><canvas id="chart-monthly"></canvas></div>
       </div>
+      <div class="chart-card" style="grid-column: 1 / -1;">
+        <div class="chart-title">Net Cash Flow Trend</div>
+        <div class="chart-container" style="height:200px;"><canvas id="chart-trend"></canvas></div>
+      </div>
       <div class="chart-card">
         <div class="chart-title">Top Vendors</div>
         <div class="chart-container"><canvas id="chart-vendors"></canvas></div>
@@ -514,6 +531,10 @@ const API = '';   // empty = same origin (nginx proxy); set to 'http://localhost
 let docsOffset = 0;
 const docsLimit = 20;
 let docsTotal   = 0;
+let docsCache   = [];   // current page data for client-side sort
+let sortCol     = 'upload_date';
+let sortDir     = 'desc';
+let selectedIds = new Set();
 let charts = {};
 
 // ── Utility ──────────────────────────────────────────────────────────────────
@@ -649,7 +670,8 @@ async function loadDocuments() {
     const qs   = `?limit=${docsLimit}&offset=${docsOffset}` + (status ? `&status=${status}` : '');
     const data = await apiFetch('/documents' + qs);
     docsTotal  = data.total || 0;
-    renderDocRows(data.documents || [], tbody, true);
+    docsCache  = data.documents || [];
+    renderDocRows(docsCache, tbody, true);
     updatePagination();
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:1.5rem;">Error: ${e.message}</td></tr>`;
@@ -658,24 +680,90 @@ async function loadDocuments() {
 
 function renderDocRows(docs, tbody, showDetail) {
   if (!docs.length) {
-    tbody.innerHTML = `<tr><td colspan="${showDetail ? 5 : 4}">
+    tbody.innerHTML = `<tr><td colspan="${showDetail ? 6 : 4}">
       <div class="empty-state"><div class="icon">📂</div>No documents yet</div>
     </td></tr>`;
     return;
   }
   tbody.innerHTML = docs.map(d => {
     const cat = d.category || d.categories?.[0]?.category || null;
-    return `<tr onclick="${showDetail ? `openDoc('${d.id}')` : ''}">
-      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${d.filename}">${d.filename}</td>
+    const fn  = d.filename.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const checked = selectedIds.has(d.id) ? 'checked' : '';
+    return `<tr onclick="${showDetail ? `openDoc('${d.id}')` : ''}" id="row-${d.id}">
+      ${showDetail ? `<td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleRow('${d.id}',this)" style="cursor:pointer;" /></td>` : '<td></td>'}
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${d.filename}">${d.filename}</td>
       <td>${statusBadge(d.status)}</td>
       <td>${catBadge(cat)}</td>
-      <td style="color:var(--muted)">${fmtDate(d.created_at)}</td>
-      ${showDetail ? `<td style="display:flex;gap:0.4rem;">
-        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openDoc('${d.id}')">View</button>
-        <button class="btn btn-sm" style="background:var(--danger);opacity:0.85;" onclick="event.stopPropagation();deleteDoc('${d.id}','${d.filename.replace(/'/g,"\\'")}')">Delete</button>
+      <td style="color:var(--muted)">${fmtDate(d.upload_date || d.created_at)}</td>
+      ${showDetail ? `<td style="display:flex;gap:0.4rem;" onclick="event.stopPropagation()">
+        <button class="btn btn-outline btn-sm" onclick="openDoc('${d.id}')">View</button>
+        <button class="btn btn-sm" style="background:var(--danger);opacity:0.85;" onclick="deleteDoc('${d.id}','${fn}')">Delete</button>
       </td>` : ''}
     </tr>`;
   }).join('');
+}
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+function sortBy(col) {
+  if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  else { sortCol = col; sortDir = 'asc'; }
+  document.querySelectorAll('[id^="sort-"]').forEach(el => el.textContent = '');
+  document.getElementById('sort-' + col).textContent = sortDir === 'asc' ? '↑' : '↓';
+  const sorted = [...docsCache].sort((a, b) => {
+    let av = a[col] ?? '', bv = b[col] ?? '';
+    if (col === 'upload_date') { av = new Date(av); bv = new Date(bv); }
+    else { av = String(av).toLowerCase(); bv = String(bv).toLowerCase(); }
+    return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+  renderDocRows(sorted, document.getElementById('docs-tbody'), true);
+}
+
+// ── Select / Bulk delete ──────────────────────────────────────────────────────
+function toggleRow(id, cb) {
+  cb.checked ? selectedIds.add(id) : selectedIds.delete(id);
+  updateBulkBar();
+}
+
+function toggleSelectAll(cb) {
+  docsCache.forEach(d => cb.checked ? selectedIds.add(d.id) : selectedIds.delete(d.id));
+  document.querySelectorAll('#docs-tbody input[type=checkbox]').forEach(c => c.checked = cb.checked);
+  updateBulkBar();
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll('#docs-tbody input[type=checkbox]').forEach(c => c.checked = false);
+  document.getElementById('select-all').checked = false;
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  if (selectedIds.size > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('bulk-count').textContent = `${selectedIds.size} document${selectedIds.size > 1 ? 's' : ''} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function bulkDelete() {
+  const count = selectedIds.size;
+  if (!confirm(`Delete ${count} document${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+  const ids = [...selectedIds];
+  await Promise.all(ids.map(id => apiFetch(`/documents/${id}`, { method: 'DELETE' }).catch(() => {})));
+  selectedIds.clear();
+  updateBulkBar();
+  loadDocuments();
+  loadRecent();
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  const a = document.createElement('a');
+  a.href = API + '/documents/export';
+  a.download = 'finsight_export.csv';
+  a.click();
 }
 
 function updatePagination() {
@@ -786,6 +874,7 @@ function renderDashboard(data) {
   drawCategoryChart(data.by_category         || {});
   drawMonthlyChart(data.monthly_cashflow     || []);
   drawVendorChart(data.top_vendors           || []);
+  drawTrendChart(data.monthly_cashflow       || []);
 }
 
 function destroyChart(id) {
@@ -949,6 +1038,59 @@ async function doLogout() {
   document.getElementById('logout-btn').style.display = 'none';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
+}
+
+function drawTrendChart(monthly) {
+  destroyChart('trend');
+  if (!monthly.length) return;
+  const labels = monthly.map(m => m.month);
+  // Cumulative net
+  let cum = 0;
+  const cumNet = monthly.map(m => { cum += (m.income - m.expenses); return parseFloat(cum.toFixed(2)); });
+  const netPerMonth = monthly.map(m => parseFloat((m.income - m.expenses).toFixed(2)));
+
+  const ctx = document.getElementById('chart-trend').getContext('2d');
+  charts['trend'] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Net per Month',
+          data: netPerMonth,
+          borderColor: 'rgba(108,99,255,0.9)',
+          backgroundColor: 'rgba(108,99,255,0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 4,
+          pointBackgroundColor: 'rgba(108,99,255,1)',
+        },
+        {
+          label: 'Cumulative Net',
+          data: cumNet,
+          borderColor: 'rgba(78,204,163,0.9)',
+          backgroundColor: 'transparent',
+          borderDash: [5, 4],
+          tension: 0.4,
+          pointRadius: 3,
+          pointBackgroundColor: 'rgba(78,204,163,1)',
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: '#8892aa', font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } },
+        y: {
+          ticks: { color: '#8892aa', callback: v => '$' + v.toLocaleString() },
+          grid: { color: '#2e3248' }
+        }
+      }
+    }
+  });
 }
 
 // ── Delete document ───────────────────────────────────────────────────────────
