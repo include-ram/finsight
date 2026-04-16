@@ -139,18 +139,80 @@
     .upload-result.error   { background: rgba(255, 107, 107, 0.1); border: 1px solid var(--danger); color: var(--danger); }
 
     /* ── Stats row ── */
-    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
     .stat-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
     }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--accent);
+      opacity: 0.6;
+    }
+    .stat-card.green-accent::before { background: var(--accent2); }
+    .stat-card.red-accent::before   { background: var(--danger); }
+    .stat-card.warn-accent::before  { background: var(--warn); }
+    .stat-card.purple-accent::before{ background: var(--accent); }
     .stat-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
     .stat-value { font-size: 1.6rem; font-weight: 700; }
     .stat-value.green { color: var(--accent2); }
     .stat-value.red   { color: var(--danger); }
     .stat-value.purple { color: var(--accent); }
+    .stat-value.warn   { color: var(--warn); }
+    .stat-sub { font-size: 0.72rem; color: var(--muted); margin-top: 0.35rem; }
+    .stat-trend { font-size: 0.75rem; margin-top: 0.35rem; font-weight: 500; }
+    .stat-trend.up   { color: var(--accent2); }
+    .stat-trend.down { color: var(--danger); }
+
+    /* ── Ratio bar ── */
+    .ratio-bar-wrap { margin: 1.25rem 0 0.5rem; }
+    .ratio-bar-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.4rem; display: flex; justify-content: space-between; }
+    .ratio-bar-track { height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; display: flex; }
+    .ratio-bar-income   { background: var(--accent2); height: 100%; transition: width 0.6s ease; }
+    .ratio-bar-expenses { background: var(--danger);  height: 100%; transition: width 0.6s ease; }
+
+    /* ── Insights card ── */
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
+    .insight-item {
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+    .insight-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
+    .insight-text { font-size: 0.82rem; line-height: 1.45; }
+    .insight-text strong { color: var(--text); }
+    .insight-text span   { color: var(--muted); }
+
+    /* ── Activity feed ── */
+    .activity-list { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .activity-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      background: var(--surface2);
+      border-radius: 8px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .activity-item:hover { background: #2a2e45; }
+    .activity-icon { font-size: 1.1rem; flex-shrink: 0; }
+    .activity-name { flex: 1; min-width: 0; }
+    .activity-name .fname { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .activity-name .fcat  { font-size: 0.73rem; color: var(--muted); }
+    .activity-amount { font-weight: 600; white-space: nowrap; }
+    .activity-date { font-size: 0.73rem; color: var(--muted); white-space: nowrap; }
 
     /* ── Documents table ── */
     .table-wrap { overflow-x: auto; }
@@ -251,6 +313,10 @@
       margin-top: 0.5rem;
     }
     .preview-link:hover { text-decoration: underline; }
+
+    @media (max-width: 640px) {
+      #insights-row { grid-template-columns: 1fr !important; }
+    }
 
     /* ── Charts ── */
     .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
@@ -481,12 +547,70 @@
       </div>
     </div>
 
-    <!-- Stat cards -->
+    <!-- Stat cards row 1 -->
     <div class="stats-row" style="margin-top:1rem;" id="stat-cards">
-      <div class="stat-card"><div class="stat-label">Total Income</div><div class="stat-value green" id="stat-income">–</div></div>
-      <div class="stat-card"><div class="stat-label">Total Expenses</div><div class="stat-value red" id="stat-expenses">–</div></div>
-      <div class="stat-card"><div class="stat-label">Net Cash Flow</div><div class="stat-value purple" id="stat-net">–</div></div>
-      <div class="stat-card"><div class="stat-label">Documents</div><div class="stat-value" id="stat-docs">–</div></div>
+      <div class="stat-card green-accent">
+        <div class="stat-label">Total Income</div>
+        <div class="stat-value green" id="stat-income">–</div>
+        <div class="stat-trend" id="stat-income-trend"></div>
+      </div>
+      <div class="stat-card red-accent">
+        <div class="stat-label">Total Expenses</div>
+        <div class="stat-value red" id="stat-expenses">–</div>
+        <div class="stat-trend" id="stat-expenses-trend"></div>
+      </div>
+      <div class="stat-card purple-accent">
+        <div class="stat-label">Net Cash Flow</div>
+        <div class="stat-value purple" id="stat-net">–</div>
+        <div class="stat-sub" id="stat-net-sub"></div>
+      </div>
+      <div class="stat-card warn-accent">
+        <div class="stat-label">Savings Rate</div>
+        <div class="stat-value warn" id="stat-savings">–</div>
+        <div class="stat-sub">of income saved</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Monthly Spend</div>
+        <div class="stat-value" id="stat-avg-spend">–</div>
+        <div class="stat-sub" id="stat-avg-sub"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Documents</div>
+        <div class="stat-value" id="stat-docs">–</div>
+        <div class="stat-sub" id="stat-docs-sub"></div>
+      </div>
+    </div>
+
+    <!-- Income vs Expenses ratio bar -->
+    <div class="card" style="margin-bottom:1.5rem; padding:1rem 1.5rem;" id="ratio-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+        <span style="font-size:0.82rem; font-weight:600;">Income vs Expenses</span>
+        <span style="font-size:0.78rem; color:var(--muted);" id="ratio-label">–</span>
+      </div>
+      <div class="ratio-bar-track">
+        <div class="ratio-bar-income"   id="ratio-income-bar"   style="width:0%"></div>
+        <div class="ratio-bar-expenses" id="ratio-expenses-bar" style="width:0%"></div>
+      </div>
+      <div class="ratio-bar-label" style="margin-top:0.4rem;">
+        <span style="color:var(--accent2);">■ Income</span>
+        <span style="color:var(--danger);">■ Expenses</span>
+      </div>
+    </div>
+
+    <!-- Quick Insights + Recent Activity side by side -->
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;" id="insights-row">
+      <div class="card">
+        <div class="card-title">Quick Insights</div>
+        <div class="insights-grid" id="insights-grid">
+          <div style="color:var(--muted); font-size:0.85rem;">Loading…</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Activity</div>
+        <div class="activity-list" id="activity-list">
+          <div style="color:var(--muted); font-size:0.85rem;">Loading…</div>
+        </div>
+      </div>
     </div>
 
     <!-- Charts -->
@@ -504,8 +628,12 @@
         <div class="chart-container" style="height:200px;"><canvas id="chart-trend"></canvas></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Top Vendors</div>
+        <div class="chart-title">Top Vendors by Spend</div>
         <div class="chart-container"><canvas id="chart-vendors"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Category Breakdown</div>
+        <div id="category-breakdown-table" style="margin-top:0.5rem;"></div>
       </div>
     </div>
   </div>
@@ -889,19 +1017,173 @@ function renderDashboard(data) {
   const income   = data.total_income   ?? 0;
   const expenses = data.total_expenses ?? 0;
   const net      = income - expenses;
+  const monthly  = data.monthly_cashflow || [];
 
+  // ── Stat cards ──────────────────────────────────────────────────────────────
   document.getElementById('stat-income').textContent   = fmt.format(income);
   document.getElementById('stat-expenses').textContent = fmt.format(expenses);
   document.getElementById('stat-net').textContent      = fmt.format(net);
   document.getElementById('stat-net').style.color      = net >= 0 ? 'var(--accent2)' : 'var(--danger)';
+  document.getElementById('stat-net-sub').textContent  = net >= 0 ? 'surplus' : 'deficit';
+
+  // Savings rate
+  const savingsRate = income > 0 ? ((net / income) * 100) : 0;
+  const savEl = document.getElementById('stat-savings');
+  savEl.textContent = (savingsRate >= 0 ? '+' : '') + savingsRate.toFixed(1) + '%';
+  savEl.style.color = savingsRate >= 0 ? 'var(--warn)' : 'var(--danger)';
+
+  // Avg monthly spend
+  const avgSpend = monthly.length > 0 ? expenses / monthly.length : expenses;
+  document.getElementById('stat-avg-spend').textContent = fmt.format(avgSpend);
+  document.getElementById('stat-avg-sub').textContent   = monthly.length > 1 ? `over ${monthly.length} months` : 'this month';
+
+  // Month-over-month trend arrows on income/expenses
+  if (monthly.length >= 2) {
+    const last = monthly[monthly.length - 1];
+    const prev = monthly[monthly.length - 2];
+    const expChg = prev.expenses > 0 ? ((last.expenses - prev.expenses) / prev.expenses * 100) : 0;
+    const incChg = prev.income   > 0 ? ((last.income   - prev.income)   / prev.income   * 100) : 0;
+    const expEl = document.getElementById('stat-expenses-trend');
+    const incEl = document.getElementById('stat-income-trend');
+    expEl.textContent = (expChg >= 0 ? '▲ ' : '▼ ') + Math.abs(expChg).toFixed(1) + '% vs prev month';
+    expEl.className   = 'stat-trend ' + (expChg > 0 ? 'down' : 'up');
+    incEl.textContent = (incChg >= 0 ? '▲ ' : '▼ ') + Math.abs(incChg).toFixed(1) + '% vs prev month';
+    incEl.className   = 'stat-trend ' + (incChg >= 0 ? 'up' : 'down');
+  }
+
+  // Docs breakdown
   const counts = data.document_counts || {};
   const totalDocs = Object.values(counts).reduce((a, b) => a + Number(b), 0);
   document.getElementById('stat-docs').textContent = totalDocs || '–';
+  const completed = Number(counts.completed || 0);
+  document.getElementById('stat-docs-sub').textContent = completed ? `${completed} processed` : '';
 
-  drawCategoryChart(data.by_category         || {});
-  drawMonthlyChart(data.monthly_cashflow     || []);
-  drawVendorChart(data.top_vendors           || []);
-  drawTrendChart(data.monthly_cashflow       || []);
+  // ── Ratio bar ───────────────────────────────────────────────────────────────
+  const total = income + expenses;
+  const iPct  = total > 0 ? (income   / total * 100) : 50;
+  const ePct  = total > 0 ? (expenses / total * 100) : 50;
+  document.getElementById('ratio-income-bar').style.width   = iPct + '%';
+  document.getElementById('ratio-expenses-bar').style.width = ePct + '%';
+  document.getElementById('ratio-label').textContent =
+    total > 0 ? `${iPct.toFixed(0)}% income · ${ePct.toFixed(0)}% expenses` : '–';
+
+  // ── Quick Insights ──────────────────────────────────────────────────────────
+  renderInsights(data);
+
+  // ── Recent Activity ─────────────────────────────────────────────────────────
+  renderActivity();
+
+  // ── Charts ──────────────────────────────────────────────────────────────────
+  drawCategoryChart(data.by_category     || {});
+  drawMonthlyChart(monthly);
+  drawVendorChart(data.top_vendors       || []);
+  drawTrendChart(monthly);
+  renderCategoryBreakdown(data.by_category || {}, expenses);
+}
+
+function renderInsights(data) {
+  const income   = data.total_income   ?? 0;
+  const expenses = data.total_expenses ?? 0;
+  const monthly  = data.monthly_cashflow || [];
+  const vendors  = data.top_vendors || [];
+  const bycat    = data.by_category || {};
+
+  const items = [];
+
+  // Top expense category
+  const cats = Object.entries(bycat).filter(([k]) => k !== 'Income').sort((a,b) => b[1]-a[1]);
+  if (cats.length) {
+    items.push({ icon: '📊', text: `<strong>Top expense:</strong> <span>${cats[0][0]} at ${fmt.format(cats[0][1])}</span>` });
+  }
+
+  // Top vendor
+  if (vendors.length) {
+    items.push({ icon: '🏪', text: `<strong>Biggest vendor:</strong> <span>${vendors[0].vendor} — ${fmt.format(vendors[0].total_spend)}</span>` });
+  }
+
+  // MoM change
+  if (monthly.length >= 2) {
+    const last = monthly[monthly.length - 1];
+    const prev = monthly[monthly.length - 2];
+    const chg = prev.expenses > 0 ? ((last.expenses - prev.expenses) / prev.expenses * 100) : 0;
+    const dir = chg > 0 ? 'more' : 'less';
+    items.push({ icon: chg > 0 ? '📈' : '📉', text: `<strong>${Math.abs(chg).toFixed(0)}% ${dir}</strong> <span>spent in ${last.month} vs ${prev.month}</span>` });
+  }
+
+  // Savings message
+  const rate = income > 0 ? (income - expenses) / income * 100 : 0;
+  if (income > 0) {
+    const msg = rate >= 20 ? 'Great job! Saving over 20% of income.'
+              : rate >= 10 ? 'On track — saving 10%+ of income.'
+              : rate >= 0  ? 'Saving some income — aim for 20%.'
+              :              'Spending exceeds income this period.';
+    items.push({ icon: rate >= 10 ? '✅' : '⚠️', text: `<strong>${msg}</strong>` });
+  }
+
+  // Number of categories used
+  if (cats.length > 1) {
+    items.push({ icon: '🗂️', text: `Expenses spread across <strong>${cats.length} categories</strong>` });
+  }
+
+  // Best month
+  if (monthly.length >= 2) {
+    const best = [...monthly].sort((a,b) => b.net - a.net)[0];
+    items.push({ icon: '🌟', text: `<strong>Best month:</strong> <span>${best.month} (net ${fmt.format(best.net)})</span>` });
+  }
+
+  const grid = document.getElementById('insights-grid');
+  if (!items.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">Upload more documents to generate insights.</div>';
+    return;
+  }
+  grid.innerHTML = items.map(i =>
+    `<div class="insight-item"><div class="insight-icon">${i.icon}</div><div class="insight-text">${i.text}</div></div>`
+  ).join('');
+}
+
+async function renderActivity() {
+  const el = document.getElementById('activity-list');
+  try {
+    const data = await apiFetch('/documents?limit=6&offset=0');
+    const docs = data.documents || [];
+    if (!docs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">No documents yet.</div>'; return; }
+    const icons = { Income: '💰', Food: '🍔', Utilities: '⚡', Travel: '🚗', Medical: '🏥', Insurance: '🛡️', Housing: '🏠', Entertainment: '🎬' };
+    el.innerHTML = docs.map(d => {
+      const icon = icons[d.category] || '📄';
+      const amt  = d.total_amount ? fmt.format(d.total_amount) : '–';
+      return `<div class="activity-item" onclick="showDocDetail('${d.id}')">
+        <div class="activity-icon">${icon}</div>
+        <div class="activity-name">
+          <div class="fname">${d.filename}</div>
+          <div class="fcat">${d.category || 'Uncategorized'}</div>
+        </div>
+        <div class="activity-amount" style="color:${d.category==='Income'?'var(--accent2)':'var(--danger)'}">${amt}</div>
+        <div class="activity-date">${fmtDate(d.upload_date)}</div>
+      </div>`;
+    }).join('');
+  } catch { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">Could not load activity.</div>'; }
+}
+
+function renderCategoryBreakdown(bycat, totalExpenses) {
+  const el = document.getElementById('category-breakdown-table');
+  const entries = Object.entries(bycat).sort((a,b) => b[1]-a[1]);
+  if (!entries.length) { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">No data.</div>'; return; }
+  const catColors = { Income:'var(--accent2)', Food:'#f9844a', Utilities:'#4895ef', Travel:'#f72585', Medical:'#7209b7', Housing:'#3a0ca3', Entertainment:'#480ca8' };
+  el.innerHTML = entries.map(([cat, amt]) => {
+    const pct = totalExpenses > 0 && cat !== 'Income' ? (amt / totalExpenses * 100).toFixed(1) : '–';
+    const col = catColors[cat] || 'var(--accent)';
+    const bar = pct !== '–' ? `<div style="height:3px;background:${col};border-radius:2px;width:${Math.min(parseFloat(pct),100)}%;margin-top:4px;opacity:0.7;"></div>` : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-size:0.82rem;font-weight:500;color:${col};">${cat}</div>
+        ${bar}
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:0.85rem;font-weight:600;">${fmt.format(amt)}</div>
+        ${pct !== '–' ? `<div style="font-size:0.72rem;color:var(--muted);">${pct}%</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function destroyChart(id) {
