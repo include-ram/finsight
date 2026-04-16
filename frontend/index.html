@@ -384,17 +384,17 @@
   <!-- ========== UPLOAD TAB ========== -->
   <div class="tab-panel active" id="tab-upload">
     <div class="card">
-      <div class="card-title">Upload Financial Document</div>
+      <div class="card-title">Upload Financial Documents</div>
       <div class="upload-zone" id="upload-zone">
-        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" />
+        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" multiple />
         <div class="upload-icon">📄</div>
-        <div class="upload-title">Drag & drop your file here</div>
-        <div class="upload-sub">or click to browse &nbsp;·&nbsp; <strong>PDF, PNG, JPG, TIFF, BMP</strong> up to 50 MB</div>
+        <div class="upload-title">Drag & drop files here</div>
+        <div class="upload-sub">or click to browse &nbsp;·&nbsp; <strong>PDF, PNG, JPG, TIFF, BMP</strong> up to 50 MB each &nbsp;·&nbsp; multiple files OK</div>
       </div>
 
-      <div id="upload-status" style="display:none;">
+      <div id="upload-status" style="display:none; margin-top:1rem;">
         <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
-        <div style="font-size:0.82rem; color:var(--muted);" id="progress-label">Uploading…</div>
+        <div style="font-size:0.82rem; color:var(--muted); margin-bottom:0.5rem;" id="progress-label">Uploading…</div>
         <div id="upload-result"></div>
       </div>
     </div>
@@ -593,59 +593,86 @@ zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
 zone.addEventListener('drop', e => {
   e.preventDefault();
   zone.classList.remove('dragover');
-  if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+  if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
 });
-input.addEventListener('change', () => { if (input.files.length) uploadFile(input.files[0]); });
+input.addEventListener('change', () => { if (input.files.length) uploadFiles(input.files); });
 
-async function uploadFile(file) {
+async function uploadFiles(files) {
   const statusDiv = document.getElementById('upload-status');
   const bar       = document.getElementById('progress-bar');
   const label     = document.getElementById('progress-label');
   const result    = document.getElementById('upload-result');
 
+  const fileList = Array.from(files);
   statusDiv.style.display = 'block';
   result.innerHTML = '';
   bar.style.width = '0%';
-  label.textContent = `Uploading ${file.name}…`;
 
-  // Fake upload progress (XHR doesn't give real progress for small files)
-  let pct = 0;
-  const ticker = setInterval(() => {
-    pct = Math.min(pct + Math.random() * 15, 85);
-    bar.style.width = pct + '%';
-  }, 200);
+  let succeeded = 0, failed = 0;
 
-  try {
-    const fd = new FormData();
-    fd.append('file', file);
-    const res = await fetch(API + '/upload', { method: 'POST', body: fd });
-    const data = await res.json();
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    label.textContent = `Uploading ${file.name} (${i + 1} of ${fileList.length})…`;
 
-    clearInterval(ticker);
-    bar.style.width = '100%';
+    // Row placeholder
+    const rowId = 'upload-row-' + i;
+    result.insertAdjacentHTML('beforeend',
+      `<div id="${rowId}" class="upload-result" style="background:rgba(255,255,255,0.03); border:1px solid var(--border); color:var(--muted);">
+        ⏳ <strong>${file.name}</strong> — uploading…
+      </div>`);
 
-    if (res.ok || res.status === 201) {
-      label.textContent = 'Processing complete!';
-      result.innerHTML = `
-        <div class="upload-result success">
-          ✅ <strong>${file.name}</strong> processed successfully.<br>
-          Category: <strong>${data.category || data.categories?.[0]?.category || '–'}</strong> &nbsp;·&nbsp;
-          ID: <code style="font-size:0.75rem;">${data.id || data.document_id}</code>
-          <br><a href="#" style="color:var(--accent2); font-size:0.82rem; margin-top:0.4rem; display:inline-block;"
-               onclick="switchTab('documents'); return false;">View in Documents →</a>
-        </div>`;
-      loadRecent();
-    } else {
-      label.textContent = 'Upload failed.';
-      result.innerHTML = `<div class="upload-result error">❌ ${data.error || 'Unknown error'}</div>`;
+    // Animate bar for this file
+    const startPct = (i / fileList.length) * 100;
+    const endPct   = ((i + 1) / fileList.length) * 100;
+    bar.style.width = startPct + '%';
+    let pct = startPct;
+    const ticker = setInterval(() => {
+      pct = Math.min(pct + Math.random() * 8, endPct - 2);
+      bar.style.width = pct + '%';
+    }, 200);
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res  = await fetch(API + '/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+
+      clearInterval(ticker);
+      bar.style.width = endPct + '%';
+
+      const row = document.getElementById(rowId);
+      if (res.ok || res.status === 201) {
+        succeeded++;
+        row.className = 'upload-result success';
+        row.innerHTML = `✅ <strong>${file.name}</strong> —
+          Category: <strong>${data.category || data.categories?.[0]?.category || '–'}</strong>`;
+      } else {
+        failed++;
+        row.className = 'upload-result error';
+        row.innerHTML = `❌ <strong>${file.name}</strong> — ${data.error || 'Upload failed'}`;
+      }
+    } catch (e) {
+      clearInterval(ticker);
+      failed++;
+      const row = document.getElementById(rowId);
+      row.className = 'upload-result error';
+      row.innerHTML = `❌ <strong>${file.name}</strong> — ${e.message}`;
     }
-  } catch (e) {
-    clearInterval(ticker);
-    bar.style.width = '0%';
-    label.textContent = 'Upload failed.';
-    result.innerHTML = `<div class="upload-result error">❌ ${e.message}</div>`;
   }
-  // Reset file input so the same file can be re-uploaded
+
+  bar.style.width = '100%';
+  label.textContent = fileList.length === 1
+    ? (failed ? 'Upload failed.' : 'Processing complete!')
+    : `Done: ${succeeded} succeeded${failed ? ', ' + failed + ' failed' : ''}.`;
+
+  if (succeeded) {
+    result.insertAdjacentHTML('beforeend',
+      `<div style="margin-top:0.75rem; font-size:0.85rem;">
+        <a href="#" style="color:var(--accent2);" onclick="switchTab('documents'); return false;">View in Documents →</a>
+      </div>`);
+    loadRecent();
+  }
+
   input.value = '';
 }
 
