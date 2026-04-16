@@ -19,13 +19,13 @@ logger = logging.getLogger(__name__)
 
 # ── Connection parameters (from environment) ──────────────────────────────────
 DB_CONFIG = {
-    "host":     os.getenv("RDS_HOST", "localhost"),
+    "host":     os.getenv("RDS_HOST", "db"),
     "port":     int(os.getenv("RDS_PORT", 5432)),
     "dbname":   os.getenv("RDS_DB", "finsight"),
-    "user":     os.getenv("RDS_USER", "admin"),
-    "password": os.getenv("RDS_PASSWORD", ""),
+    "user":     os.getenv("RDS_USER", "finsight_admin"),
+    "password": os.getenv("RDS_PASSWORD", "FinsightDB2024!"),
     "connect_timeout": 10,
-    "sslmode": "require",   # RDS enforces SSL
+    "sslmode": os.getenv("DB_SSLMODE", "prefer"),
 }
 
 
