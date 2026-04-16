@@ -150,11 +150,30 @@ class OCRProcessor:
             logger.error("Image OCR failed: %s", exc)
             raise RuntimeError(f"Image OCR failed: {exc}") from exc
 
+    # ── OCR normalisation ─────────────────────────────────────────────────────
+    _MONTH_NAMES = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+
+    def _normalize_text(self, text: str) -> str:
+        """
+        Fix common OCR artefacts before running field-extraction regexes.
+        e.g. 'J anuary' → 'January', 'F ebruary' → 'February'.
+        """
+        for month in self._MONTH_NAMES:
+            # "J anuary" pattern: first letter + space + rest of word
+            broken = month[0] + " " + month[1:]
+            text = text.replace(broken, month)
+        return text
+
     def _extract_fields(self, text: str) -> dict[str, Any]:
         """
         Apply regex patterns to the raw OCR text.
         Returns a dict of field_name → value(s).
         """
+        text = self._normalize_text(text)
+
         fields: dict[str, Any] = {}
         fields["_page_count"] = getattr(self, "_last_page_count", 1)
 
@@ -203,22 +222,31 @@ class OCRProcessor:
     def _find_total_amount(self, text: str, parsed_amounts: list) -> float:
         """
         Find the most likely total amount in the document.
-        Scans for explicit label patterns first (Total, Amount Due, Net Pay, etc.)
-        then falls back to the largest amount found.
+
+        Strategy:
+        1. Scan for explicit total labels followed by a number.
+        2. If TOTAL appears with only a percentage (e.g. 'CATEGORY TOTAL 100%')
+           the document is an itemised list — sum the unique line-item amounts.
+        3. If every unique amount appears the same number of times, the OCR is
+           reading the same section twice (layout duplication) — sum unique.
+        4. Fall back to the largest amount found.
         """
-        # Patterns ordered by specificity / reliability
-        total_patterns = [
+        if not parsed_amounts:
+            return 0.0
+
+        # ── 1. Explicit label with a following dollar value ───────────────────
+        explicit_patterns = [
             r"(?:grand\s+)?total\s+amount\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
             r"amount\s+(?:due|owed|payable)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
             r"total\s+(?:due|payable|charges?|cost)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
-            r"(?:^|\n)\s*total\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s|$)",
             r"net\s+(?:pay|salary|wages|income|amount)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
             r"gross\s+(?:pay|salary|wages|income)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
             r"balance\s+(?:due|forward|payable)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
-            r"(?:you\s+(?:owe|paid|save[d]?))\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"total\s*\$\s*([\d,]+(?:\.\d{1,2})?)",
+            r"(?:^|\n)\s*total\s*[:\-]\s*\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s|$)",
             r"(?:sub\s*)?total\s*[:\-]\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
         ]
-        for pattern in total_patterns:
+        for pattern in explicit_patterns:
             m = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if m:
                 try:
@@ -228,8 +256,21 @@ class OCRProcessor:
                 except ValueError:
                     pass
 
-        # Fall back to the largest amount found
-        return max(parsed_amounts) if parsed_amounts else 0.0
+        # ── 2. TOTAL label with only a percentage — itemised list ─────────────
+        # e.g. "CATEGORY TOTAL  100%"
+        if re.search(r"\bTOTAL\b[^\d$\n]*\d+\.?\d*\s*%", text, re.IGNORECASE):
+            unique = list(dict.fromkeys(parsed_amounts))
+            return round(sum(unique), 2)
+
+        # ── 3. Every unique amount appears the same number of times ───────────
+        # (OCR is reading the same section twice due to document layout)
+        from collections import Counter
+        counts = Counter(parsed_amounts)
+        if len(counts) >= 2 and len(set(counts.values())) == 1:
+            return round(sum(counts.keys()), 2)
+
+        # ── 4. Fall back to the largest amount ────────────────────────────────
+        return max(parsed_amounts)
 
     def _extract_vendor(self, text: str) -> str | None:
         """
