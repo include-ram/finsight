@@ -983,7 +983,7 @@ function drawVendorChart(vendors) {
   if (!vendors.length) return;
 
   const labels = vendors.map(v => v.vendor || v.name);
-  const values = vendors.map(v => v.count  || v.total || v.amount);
+  const values = vendors.map(v => v.total_spend ?? v.count ?? 0);
 
   const ctx = document.getElementById('chart-vendors').getContext('2d');
   charts['vendors'] = new Chart(ctx, {
@@ -991,7 +991,7 @@ function drawVendorChart(vendors) {
     data: {
       labels,
       datasets: [{
-        label: 'Total Spend',
+        label: 'Total Spend ($)',
         data: values,
         backgroundColor: 'rgba(108,99,255,0.7)',
         borderRadius: 4,
@@ -1001,7 +1001,14 @@ function drawVendorChart(vendors) {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ' $' + ctx.parsed.x.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})
+          }
+        }
+      },
       scales: {
         x: { ticks: { color: '#8892aa', callback: v => '$' + v.toLocaleString() }, grid: { color: '#2e3248' } },
         y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } }

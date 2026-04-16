@@ -314,21 +314,35 @@ class DBHandler:
             else:
                 total_expenses += total
 
-        # ── Monthly cash flow (last 12 months) ────────────────────────────────
+        # ── Monthly cash flow (last 12 months, grouped by document period) ──────
+        # Uses primary_date extracted by OCR so March docs appear in March even
+        # if uploaded later. Falls back to upload_date when not parseable.
         monthly_query = f"""
             SELECT
-                TO_CHAR(d.upload_date, 'YYYY-MM') AS month,
+                COALESCE(pd.period_month, TO_CHAR(d.upload_date, 'YYYY-MM')) AS month,
                 SUM(CASE WHEN c.category = 'Income' THEN CAST(e.field_value AS NUMERIC) ELSE 0 END) AS income,
                 SUM(CASE WHEN c.category != 'Income' THEN CAST(e.field_value AS NUMERIC) ELSE 0 END) AS expenses
             FROM extracted_data e
             JOIN documents d ON e.document_id = d.id
             JOIN categories c ON c.document_id = d.id
+            LEFT JOIN LATERAL (
+                SELECT
+                    CASE
+                        WHEN field_value ~ '^[A-Za-z]+ [0-9]{{1,2}}, [0-9]{{4}}$'
+                        THEN TO_CHAR(TO_DATE(field_value, 'Month DD, YYYY'), 'YYYY-MM')
+                        ELSE NULL
+                    END AS period_month
+                FROM extracted_data
+                WHERE document_id = d.id AND field_name = 'primary_date'
+                LIMIT 1
+            ) pd ON TRUE
             WHERE e.field_name = 'total_amount'
               AND e.field_value ~ '^[0-9]+(\\.[0-9]+)?$'
               AND d.status = 'completed'
               {user_filter_sql}
-              AND d.upload_date >= NOW() - INTERVAL '12 months'
-            GROUP BY TO_CHAR(d.upload_date, 'YYYY-MM')
+            GROUP BY COALESCE(pd.period_month, TO_CHAR(d.upload_date, 'YYYY-MM'))
+            HAVING COALESCE(pd.period_month, TO_CHAR(d.upload_date, 'YYYY-MM'))
+                   >= TO_CHAR(NOW() - INTERVAL '12 months', 'YYYY-MM')
             ORDER BY month ASC
         """
         monthly_rows = self._execute(monthly_query, build_params(), fetch="all") or []
@@ -342,24 +356,30 @@ class DBHandler:
             for r in monthly_rows
         ]
 
-        # ── Top vendors ───────────────────────────────────────────────────────
+        # ── Top vendors by total spend ─────────────────────────────────────────
         vendor_query = f"""
             SELECT
-                e.field_value AS vendor,
-                COUNT(*) AS doc_count
-            FROM extracted_data e
-            JOIN documents d ON e.document_id = d.id
-            WHERE e.field_name = 'vendor_name'
+                ev.field_value AS vendor,
+                COUNT(*) AS doc_count,
+                COALESCE(SUM(CAST(ea.field_value AS NUMERIC)), 0) AS total_spend
+            FROM extracted_data ev
+            JOIN documents d ON ev.document_id = d.id
+            LEFT JOIN extracted_data ea
+                ON ea.document_id = d.id
+                AND ea.field_name = 'total_amount'
+                AND ea.field_value ~ '^[0-9]+(\\.[0-9]+)?$'
+            WHERE ev.field_name = 'vendor_name'
               AND d.status = 'completed'
               {user_filter_sql}
               {month_filter_sql}
-            GROUP BY e.field_value
-            ORDER BY doc_count DESC
+            GROUP BY ev.field_value
+            ORDER BY total_spend DESC
             LIMIT 10
         """
         vendor_rows = self._execute(vendor_query, build_params(*([month] if month else [])), fetch="all") or []
         top_vendors = [
-            {"vendor": r["vendor"], "count": r["doc_count"]} for r in vendor_rows
+            {"vendor": r["vendor"], "count": r["doc_count"], "total_spend": float(r["total_spend"] or 0)}
+            for r in vendor_rows
         ]
 
         # ── Document counts by status ─────────────────────────────────────────
