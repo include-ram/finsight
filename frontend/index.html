@@ -496,6 +496,7 @@
           <option value="failed">Failed</option>
         </select>
         <button class="btn btn-outline btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+        <button class="btn btn-outline btn-sm" id="reprocess-all-btn" onclick="reprocessAll()" title="Re-run OCR on all documents to fix extracted amounts">↻ Reprocess All</button>
         <button class="btn btn-sm" onclick="loadDocuments()">Refresh</button>
       </div>
     </div>
@@ -1407,6 +1408,31 @@ function drawTrendChart(monthly) {
       }
     }
   });
+}
+
+// ── Reprocess all documents ──────────────────────────────────────────────────
+async function reprocessAll() {
+  const btn = document.getElementById('reprocess-all-btn');
+  if (!confirm('Re-run OCR on all your documents to fix extracted amounts?\n\nThis may take a minute.')) return;
+  btn.disabled = true;
+  btn.textContent = '↻ Reprocessing…';
+  try {
+    const data = await apiFetch('/documents?limit=200&offset=0');
+    const docs = data.documents || [];
+    let done = 0;
+    for (const doc of docs) {
+      await apiFetch(`/documents/${doc.id}/reprocess`, { method: 'POST' }).catch(() => {});
+      done++;
+      btn.textContent = `↻ ${done}/${docs.length}…`;
+    }
+    btn.textContent = '✓ Done';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '↻ Reprocess All'; }, 3000);
+    loadDocuments();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '↻ Reprocess All';
+    alert('Reprocess failed: ' + e.message);
+  }
 }
 
 // ── Delete document ───────────────────────────────────────────────────────────

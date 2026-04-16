@@ -170,7 +170,7 @@ class OCRProcessor:
 
         if parsed_amounts:
             fields["amounts"] = parsed_amounts
-            fields["total_amount"] = max(parsed_amounts)   # largest figure as total
+            fields["total_amount"] = self._find_total_amount(text, parsed_amounts)
             fields["min_amount"] = min(parsed_amounts)
             fields["amount_count"] = len(parsed_amounts)
 
@@ -199,6 +199,37 @@ class OCRProcessor:
         fields["document_type"] = self._detect_document_type(text)
 
         return fields
+
+    def _find_total_amount(self, text: str, parsed_amounts: list) -> float:
+        """
+        Find the most likely total amount in the document.
+        Scans for explicit label patterns first (Total, Amount Due, Net Pay, etc.)
+        then falls back to the largest amount found.
+        """
+        # Patterns ordered by specificity / reliability
+        total_patterns = [
+            r"(?:grand\s+)?total\s+amount\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"amount\s+(?:due|owed|payable)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"total\s+(?:due|payable|charges?|cost)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"(?:^|\n)\s*total\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s|$)",
+            r"net\s+(?:pay|salary|wages|income|amount)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"gross\s+(?:pay|salary|wages|income)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"balance\s+(?:due|forward|payable)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"(?:you\s+(?:owe|paid|save[d]?))\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"(?:sub\s*)?total\s*[:\-]\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+        ]
+        for pattern in total_patterns:
+            m = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if m:
+                try:
+                    val = float(re.sub(r"[^\d.]", "", m.group(1)))
+                    if val > 0:
+                        return val
+                except ValueError:
+                    pass
+
+        # Fall back to the largest amount found
+        return max(parsed_amounts) if parsed_amounts else 0.0
 
     def _extract_vendor(self, text: str) -> str | None:
         """

@@ -431,6 +431,50 @@ def delete_document(doc_id: str):
     return jsonify({"deleted": True, "id": doc_id}), 200
 
 
+# ── Reprocess a single document ──────────────────────────────────────────────
+@app.route("/documents/<doc_id>/reprocess", methods=["POST"])
+@login_required
+def reprocess_document(doc_id: str):
+    """Re-run OCR + categorisation on an already-uploaded document."""
+    try:
+        doc = db.get_document_by_id(doc_id)
+    except Exception as exc:
+        return error_response(f"Database error: {exc}", 500)
+    if not doc:
+        return error_response("Document not found", 404)
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            suffix=f"_{os.path.basename(doc['s3_key'])}", delete=False
+        ) as tmp:
+            s3.download_file(doc["s3_key"], tmp.name)
+            tmp_path = tmp.name
+
+        ocr_result = ocr.process_file(tmp_path)
+        os.unlink(tmp_path)
+        category_result = cat.categorize(ocr_result.get("raw_text", ""))
+
+        # Clear old extracted data and re-insert
+        db._execute("DELETE FROM extracted_data WHERE document_id = %s", (doc_id,))
+        for field_name, field_value in ocr_result.get("fields", {}).items():
+            db.insert_extracted_data(
+                document_id=doc_id,
+                field_name=field_name,
+                field_value=str(field_value),
+                confidence=ocr_result.get("confidence", 0.0),
+            )
+        db.insert_category(
+            document_id=doc_id,
+            category=category_result["category"],
+            confidence=category_result["confidence"],
+        )
+        db.update_document_status(doc_id, "completed")
+        return jsonify({"document_id": doc_id, "status": "completed"})
+    except Exception as exc:
+        logger.exception("Reprocess failed for %s", doc_id)
+        return error_response(f"Reprocess failed: {exc}", 500)
+
+
 # ── Dashboard summary ─────────────────────────────────────────────────────────
 @app.route("/dashboard/summary", methods=["GET"])
 @login_required
