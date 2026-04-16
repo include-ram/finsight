@@ -281,8 +281,21 @@ class DBHandler:
             p.extend(extras)
             return tuple(p)
 
+        # Filter by the document's period month (primary_date), falling back to
+        # upload_date when primary_date is absent or not parseable.
+        period_month_expr = """COALESCE(
+            (SELECT CASE
+                WHEN field_value ~ '^[A-Za-z]+ [0-9]{1,2}, [0-9]{4}$'
+                THEN TO_CHAR(TO_DATE(field_value, 'Month DD, YYYY'), 'YYYY-MM')
+                ELSE NULL END
+             FROM extracted_data
+             WHERE document_id = d.id AND field_name = 'primary_date'
+             LIMIT 1),
+            TO_CHAR(d.upload_date, 'YYYY-MM')
+        )"""
+
         if month:
-            month_filter_sql = "AND TO_CHAR(d.upload_date, 'YYYY-MM') = %s"
+            month_filter_sql = f"AND {period_month_expr} = %s"
 
         # ── Total income vs expenses ──────────────────────────────────────────
         totals_query = f"""
