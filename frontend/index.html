@@ -634,6 +634,7 @@
         <option>Rent</option><option>Travel</option><option>Shopping</option>
         <option>Subscription</option><option>Other</option>
       </select>
+      <button class="btn btn-outline btn-sm" id="starred-filter-btn" onclick="toggleStarredFilter()" title="Show starred only">☆ Starred</button>
       <button class="btn btn-outline btn-sm" onclick="clearDocFilters()">Clear</button>
     </div>
 
@@ -859,6 +860,7 @@ let docsCache     = [];
 let sortCol       = 'upload_date';
 let sortDir       = 'desc';
 let selectedIds   = new Set();
+let starredOnly   = false;
 let charts        = {};
 let budgetGoals   = {};
 let dashByCat     = {};
@@ -998,10 +1000,20 @@ function debouncedSearch() {
   searchTimer = setTimeout(() => { docsOffset = 0; loadDocuments(); }, 350);
 }
 
+function toggleStarredFilter() {
+  starredOnly = !starredOnly;
+  const btn = document.getElementById('starred-filter-btn');
+  if (btn) { btn.textContent = starredOnly ? '★ Starred' : '☆ Starred'; btn.style.color = starredOnly ? 'var(--warn)' : ''; btn.style.borderColor = starredOnly ? 'var(--warn)' : ''; }
+  docsOffset = 0; loadDocuments();
+}
+
 function clearDocFilters() {
   ['doc-search','doc-date-from','doc-date-to','doc-min-amt','doc-max-amt','doc-category'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  starredOnly = false;
+  const btn = document.getElementById('starred-filter-btn');
+  if (btn) { btn.textContent = '☆ Starred'; btn.style.color = ''; btn.style.borderColor = ''; }
   docsOffset = 0; loadDocuments();
 }
 
@@ -1023,7 +1035,8 @@ async function loadDocuments() {
     if (dateTo)   p.set('date_to',    dateTo);
     if (minAmt)   p.set('min_amount', minAmt);
     if (maxAmt)   p.set('max_amount', maxAmt);
-    if (catFilt)  p.set('category',   catFilt);
+    if (catFilt)     p.set('category',   catFilt);
+    if (starredOnly) p.set('starred',    '1');
     const data = await apiFetch('/documents?' + p.toString());
     docsTotal = data.total || 0;
     docsCache = data.documents || [];
@@ -1044,6 +1057,8 @@ function renderDocRows(docs, tbody, showDetail) {
     const cat     = d.category || d.categories?.[0]?.category || null;
     const fn      = d.filename.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const checked = selectedIds.has(d.id) ? 'checked' : '';
+    const starIcon = d.starred ? '★' : '☆';
+    const starColor = d.starred ? 'var(--warn)' : 'var(--muted)';
     return `<tr onclick="${showDetail ? `openDoc('${d.id}')` : ''}" id="row-${d.id}">
       ${showDetail ? `<td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleRow('${d.id}',this)" style="cursor:pointer;" /></td>` : '<td></td>'}
       <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${d.filename}">${d.filename}</td>
@@ -1051,11 +1066,26 @@ function renderDocRows(docs, tbody, showDetail) {
       <td>${catBadge(cat)}</td>
       <td style="color:var(--muted)">${fmtDate(d.upload_date || d.created_at)}</td>
       ${showDetail ? `<td style="display:flex;gap:0.4rem;" onclick="event.stopPropagation()">
+        <button class="btn btn-outline btn-sm" style="color:${starColor};border-color:${starColor};padding:0.4rem 0.6rem;" title="${d.starred?'Unstar':'Star'}" onclick="toggleStar('${d.id}',this)">${starIcon}</button>
         <button class="btn btn-outline btn-sm" onclick="openDoc('${d.id}')">View</button>
         <button class="btn btn-sm" style="background:var(--danger);opacity:0.85;" onclick="deleteDoc('${d.id}','${fn}')">Delete</button>
       </td>` : ''}
     </tr>`;
   }).join('');
+}
+
+// ── Star / pin ────────────────────────────────────────────────────────────────
+async function toggleStar(docId, btn) {
+  try {
+    const data = await apiFetch(`/documents/${docId}/star`, { method: 'PUT' });
+    const isStarred = data.starred;
+    btn.textContent = isStarred ? '★' : '☆';
+    const col = isStarred ? 'var(--warn)' : 'var(--muted)';
+    btn.style.color = col; btn.style.borderColor = col;
+    btn.title = isStarred ? 'Unstar' : 'Star';
+    const doc = docsCache.find(d => d.id === docId);
+    if (doc) doc.starred = isStarred;
+  } catch (e) { alert('Star failed: ' + e.message); }
 }
 
 // ── Sort ──────────────────────────────────────────────────────────────────────

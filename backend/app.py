@@ -397,7 +397,8 @@ def list_documents():
     date_to    = request.args.get("date_to") or None
     min_amount = float(request.args["min_amount"]) if request.args.get("min_amount") else None
     max_amount = float(request.args["max_amount"]) if request.args.get("max_amount") else None
-    category   = request.args.get("category") or None
+    category     = request.args.get("category") or None
+    starred_only = request.args.get("starred") == "1"
 
     try:
         kwargs = dict(
@@ -405,14 +406,14 @@ def list_documents():
             user_id=current_user_id(), search=search,
             date_from=date_from, date_to=date_to,
             min_amount=min_amount, max_amount=max_amount,
-            category=category,
+            category=category, starred_only=starred_only,
         )
         docs  = db.get_all_documents(**kwargs)
         total = db.count_documents(
             status=status, user_id=current_user_id(), search=search,
             date_from=date_from, date_to=date_to,
             min_amount=min_amount, max_amount=max_amount,
-            category=category,
+            category=category, starred_only=starred_only,
         )
         return jsonify({"total": total, "limit": limit, "offset": offset, "documents": docs})
     except Exception as exc:
@@ -606,6 +607,18 @@ def update_fields(doc_id: str):
         return jsonify({"ok": True, "updated": list(updates.keys())})
     except Exception as exc:
         return error_response(f"Failed to update fields: {exc}", 500)
+
+
+# ── Star / pin document ──────────────────────────────────────────────────────
+@app.route("/documents/<doc_id>/star", methods=["PUT"])
+@login_required
+def star_document(doc_id: str):
+    """PUT /documents/<id>/star — toggles the starred flag."""
+    try:
+        starred = db.toggle_star(doc_id, current_user_id())
+        return jsonify({"ok": True, "starred": starred})
+    except Exception as exc:
+        return error_response(f"Failed to star document: {exc}", 500)
 
 
 # ── Document notes ────────────────────────────────────────────────────────────

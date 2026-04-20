@@ -143,6 +143,9 @@ class DBHandler:
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)
             """)
             self._execute("""
+                ALTER TABLE documents ADD COLUMN IF NOT EXISTS starred BOOLEAN DEFAULT FALSE
+            """)
+            self._execute("""
                 CREATE TABLE IF NOT EXISTS document_notes (
                     id          SERIAL PRIMARY KEY,
                     document_id VARCHAR(64) NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -174,6 +177,15 @@ class DBHandler:
             (doc_id, filename, s3_key, datetime.utcnow(), status, user_id),
         )
         logger.debug("Inserted document %s", doc_id)
+
+    def toggle_star(self, doc_id: str, user_id: str) -> bool:
+        """Toggle the starred flag; returns the new value."""
+        row = self._execute(
+            "UPDATE documents SET starred = NOT COALESCE(starred, FALSE)"
+            " WHERE id = %s AND user_id = %s RETURNING starred",
+            (doc_id, user_id), fetch="one",
+        )
+        return bool(row["starred"]) if row else False
 
     def update_document_status(self, doc_id: str, status: str) -> None:
         """Update the processing status of a document."""
@@ -212,6 +224,7 @@ class DBHandler:
         min_amount: float | None = None,
         max_amount: float | None = None,
         category: str | None = None,
+        starred_only: bool = False,
     ) -> list[dict]:
         """Fetch a paginated list of documents scoped to a user with optional filters."""
         clauses = ["1=1"]
@@ -224,6 +237,8 @@ class DBHandler:
             clauses.append(
                 "EXISTS (SELECT 1 FROM categories cat WHERE cat.document_id = d.id AND cat.category = %s)"
             ); p.append(category)
+        if starred_only:
+            clauses.append("d.starred = TRUE")
         if search:
             clauses.append(
                 "(d.filename ILIKE %s OR EXISTS ("
@@ -286,6 +301,7 @@ class DBHandler:
         min_amount: float | None = None,
         max_amount: float | None = None,
         category: str | None = None,
+        starred_only: bool = False,
     ) -> int:
         """Return the total count of documents for a user with optional filters."""
         clauses = ["1=1"]
@@ -298,6 +314,8 @@ class DBHandler:
             clauses.append(
                 "EXISTS (SELECT 1 FROM categories cat WHERE cat.document_id = d.id AND cat.category = %s)"
             ); p.append(category)
+        if starred_only:
+            clauses.append("d.starred = TRUE")
         if search:
             clauses.append(
                 "(d.filename ILIKE %s OR EXISTS ("
