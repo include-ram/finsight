@@ -139,6 +139,33 @@ def me():
     })
 
 
+@app.route("/auth/password", methods=["PUT"])
+@login_required
+def change_password():
+    """PUT /auth/password  Body: { "current_password": "...", "new_password": "..." }"""
+    data = request.get_json(force=True)
+    current_pw = data.get("current_password") or ""
+    new_pw     = data.get("new_password") or ""
+    if not current_pw or not new_pw:
+        return error_response("current_password and new_password are required")
+    if len(new_pw) < 6:
+        return error_response("New password must be at least 6 characters")
+    try:
+        row = db._execute(
+            "SELECT password_hash FROM users WHERE id = %s",
+            (current_user_id(),), fetch="one",
+        )
+        if not row or not check_password_hash(row["password_hash"], current_pw):
+            return error_response("Current password is incorrect", 403)
+        db._execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (generate_password_hash(new_pw), current_user_id()),
+        )
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return error_response(f"Failed to change password: {exc}", 500)
+
+
 @app.route("/auth/email", methods=["PUT"])
 @login_required
 def update_email():

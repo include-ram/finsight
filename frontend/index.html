@@ -309,6 +309,9 @@
 
     @media (max-width: 640px) { #insights-row { grid-template-columns: 1fr !important; } }
 
+    /* ── Password modal ── */
+    .pw-strength { height: 4px; border-radius: 2px; margin-top: 4px; transition: width 0.3s, background 0.3s; }
+
     /* ── Notes ── */
     .notes-list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
     .note-item {
@@ -539,6 +542,7 @@
     <span class="status-label" id="status-label">Connecting…</span>
     <span id="username-badge" style="display:none;font-size:0.8rem;color:var(--accent2);font-weight:600;"></span>
     <span class="email-bell" id="email-bell" title="Email notification settings" onclick="openEmailSettings()">🔔</span>
+    <span class="email-bell" id="pw-lock" title="Change password" onclick="openPwModal()" style="display:none;">🔑</span>
     <button id="logout-btn" class="btn btn-outline btn-sm" style="display:none;" onclick="doLogout()">Logout</button>
   </div>
 </header>
@@ -772,6 +776,33 @@
     <div style="margin-top:1.25rem;display:flex;gap:0.75rem;">
       <button class="btn" style="flex:1;justify-content:center;" onclick="saveBudgetGoals()">Save Goals</button>
       <button class="btn btn-outline" onclick="closeBudgetModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Password Change Modal ─────────────────────────────────── -->
+<div class="modal-overlay" id="pw-modal-overlay" onclick="closePwModal(event)">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" onclick="closePwModal()">✕</button>
+    <div class="modal-title">Change Password</div>
+    <div class="form-group">
+      <label>Current Password</label>
+      <input id="pw-current" type="password" placeholder="Enter current password" />
+    </div>
+    <div class="form-group">
+      <label>New Password</label>
+      <input id="pw-new" type="password" placeholder="At least 6 characters" oninput="checkPwStrength()" />
+      <div id="pw-strength-bar" class="pw-strength" style="width:0%;background:var(--danger);"></div>
+      <div id="pw-strength-label" style="font-size:0.72rem;color:var(--muted);margin-top:3px;"></div>
+    </div>
+    <div class="form-group">
+      <label>Confirm New Password</label>
+      <input id="pw-confirm" type="password" placeholder="Repeat new password" />
+    </div>
+    <div id="pw-save-msg" style="font-size:0.82rem;margin-bottom:0.75rem;display:none;"></div>
+    <div style="display:flex;gap:0.75rem;">
+      <button class="btn" style="flex:1;justify-content:center;" onclick="savePassword()">Change Password</button>
+      <button class="btn btn-outline" onclick="closePwModal()">Cancel</button>
     </div>
   </div>
 </div>
@@ -1545,6 +1576,54 @@ async function saveBudgetGoals() {
   await loadBudgetGoals();
 }
 
+// ── Password change ───────────────────────────────────────────────────────────
+function openPwModal() {
+  ['pw-current','pw-new','pw-confirm'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('pw-save-msg').style.display = 'none';
+  document.getElementById('pw-strength-bar').style.width = '0%';
+  document.getElementById('pw-strength-label').textContent = '';
+  document.getElementById('pw-modal-overlay').classList.add('open');
+}
+function closePwModal(e) {
+  if (!e || e.target === document.getElementById('pw-modal-overlay') || e === undefined)
+    document.getElementById('pw-modal-overlay').classList.remove('open');
+}
+function checkPwStrength() {
+  const pw  = document.getElementById('pw-new').value;
+  const bar = document.getElementById('pw-strength-bar');
+  const lbl = document.getElementById('pw-strength-label');
+  let score = 0;
+  if (pw.length >= 6)  score++;
+  if (pw.length >= 10) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  const labels = ['','Weak','Fair','Good','Strong','Very strong'];
+  const colors = ['','var(--danger)','var(--warn)','var(--warn)','var(--accent2)','var(--accent2)'];
+  bar.style.width = (score * 20) + '%';
+  bar.style.background = colors[score] || 'var(--muted)';
+  lbl.textContent = labels[score] || '';
+}
+async function savePassword() {
+  const cur  = document.getElementById('pw-current').value;
+  const nw   = document.getElementById('pw-new').value;
+  const conf = document.getElementById('pw-confirm').value;
+  const msg  = document.getElementById('pw-save-msg');
+  if (!cur || !nw) { msg.style.display=''; msg.style.color='var(--danger)'; msg.textContent='All fields are required.'; return; }
+  if (nw !== conf) { msg.style.display=''; msg.style.color='var(--danger)'; msg.textContent='New passwords do not match.'; return; }
+  if (nw.length < 6) { msg.style.display=''; msg.style.color='var(--danger)'; msg.textContent='New password must be at least 6 characters.'; return; }
+  try {
+    await apiFetch('/auth/password', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ current_password: cur, new_password: nw }),
+    });
+    msg.style.display=''; msg.style.color='var(--accent2)'; msg.textContent='✓ Password changed successfully!';
+    setTimeout(closePwModal, 1500);
+  } catch (e) {
+    msg.style.display=''; msg.style.color='var(--danger)'; msg.textContent='✗ ' + e.message;
+  }
+}
+
 // ── Email notification settings ───────────────────────────────────────────────
 function openEmailSettings() {
   document.getElementById('email-input').value    = currentEmail || '';
@@ -1673,6 +1752,7 @@ function onLoggedIn(user) {
   document.getElementById('username-badge').textContent  = '👤 ' + user.username;
   document.getElementById('username-badge').style.display = '';
   document.getElementById('email-bell').style.display     = 'inline';
+  document.getElementById('pw-lock').style.display        = 'inline';
   document.getElementById('logout-btn').style.display     = '';
   currentEmail = user.email || '';
   loadRecent();
@@ -1707,6 +1787,7 @@ async function doLogout() {
   document.getElementById('auth-overlay').classList.add('open');
   document.getElementById('username-badge').style.display = 'none';
   document.getElementById('email-bell').style.display     = 'none';
+  document.getElementById('pw-lock').style.display        = 'none';
   document.getElementById('logout-btn').style.display     = 'none';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
