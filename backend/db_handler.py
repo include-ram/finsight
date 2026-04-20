@@ -211,6 +211,7 @@ class DBHandler:
         date_to: str | None = None,
         min_amount: float | None = None,
         max_amount: float | None = None,
+        category: str | None = None,
     ) -> list[dict]:
         """Fetch a paginated list of documents scoped to a user with optional filters."""
         clauses = ["1=1"]
@@ -219,6 +220,10 @@ class DBHandler:
             clauses.append("d.user_id = %s"); p.append(user_id)
         if status:
             clauses.append("d.status = %s"); p.append(status)
+        if category:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM categories cat WHERE cat.document_id = d.id AND cat.category = %s)"
+            ); p.append(category)
         if search:
             clauses.append(
                 "(d.filename ILIKE %s OR EXISTS ("
@@ -280,6 +285,7 @@ class DBHandler:
         date_to: str | None = None,
         min_amount: float | None = None,
         max_amount: float | None = None,
+        category: str | None = None,
     ) -> int:
         """Return the total count of documents for a user with optional filters."""
         clauses = ["1=1"]
@@ -288,6 +294,10 @@ class DBHandler:
             clauses.append("d.user_id = %s"); p.append(user_id)
         if status:
             clauses.append("d.status = %s"); p.append(status)
+        if category:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM categories cat WHERE cat.document_id = d.id AND cat.category = %s)"
+            ); p.append(category)
         if search:
             clauses.append(
                 "(d.filename ILIKE %s OR EXISTS ("

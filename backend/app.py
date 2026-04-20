@@ -397,6 +397,7 @@ def list_documents():
     date_to    = request.args.get("date_to") or None
     min_amount = float(request.args["min_amount"]) if request.args.get("min_amount") else None
     max_amount = float(request.args["max_amount"]) if request.args.get("max_amount") else None
+    category   = request.args.get("category") or None
 
     try:
         kwargs = dict(
@@ -404,12 +405,14 @@ def list_documents():
             user_id=current_user_id(), search=search,
             date_from=date_from, date_to=date_to,
             min_amount=min_amount, max_amount=max_amount,
+            category=category,
         )
         docs  = db.get_all_documents(**kwargs)
         total = db.count_documents(
             status=status, user_id=current_user_id(), search=search,
             date_from=date_from, date_to=date_to,
             min_amount=min_amount, max_amount=max_amount,
+            category=category,
         )
         return jsonify({"total": total, "limit": limit, "offset": offset, "documents": docs})
     except Exception as exc:

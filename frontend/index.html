@@ -627,6 +627,13 @@
       <input type="date" id="doc-date-to"   onchange="docsOffset=0; loadDocuments()" title="To date" />
       <input type="number" id="doc-min-amt" placeholder="Min $" step="0.01" min="0" onchange="docsOffset=0; loadDocuments()" />
       <input type="number" id="doc-max-amt" placeholder="Max $" step="0.01" min="0" onchange="docsOffset=0; loadDocuments()" />
+      <select id="doc-category" onchange="docsOffset=0; loadDocuments()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.45rem 0.75rem;color:var(--text);font-size:0.85rem;">
+        <option value="">All Categories</option>
+        <option>Income</option><option>Utilities</option><option>Food</option>
+        <option>Medical</option><option>Insurance</option><option>Tax</option>
+        <option>Rent</option><option>Travel</option><option>Shopping</option>
+        <option>Subscription</option><option>Other</option>
+      </select>
       <button class="btn btn-outline btn-sm" onclick="clearDocFilters()">Clear</button>
     </div>
 
@@ -992,7 +999,7 @@ function debouncedSearch() {
 }
 
 function clearDocFilters() {
-  ['doc-search','doc-date-from','doc-date-to','doc-min-amt','doc-max-amt'].forEach(id => {
+  ['doc-search','doc-date-from','doc-date-to','doc-min-amt','doc-max-amt','doc-category'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   docsOffset = 0; loadDocuments();
@@ -1006,6 +1013,7 @@ async function loadDocuments() {
   const dateTo   = document.getElementById('doc-date-to')?.value   || '';
   const minAmt   = document.getElementById('doc-min-amt')?.value   || '';
   const maxAmt   = document.getElementById('doc-max-amt')?.value   || '';
+  const catFilt  = document.getElementById('doc-category')?.value  || '';
   tbody.innerHTML = `<tr class="loading-row"><td colspan="6"><span class="spinner"></span></td></tr>`;
   try {
     const p = new URLSearchParams({ limit: docsLimit, offset: docsOffset });
@@ -1015,6 +1023,7 @@ async function loadDocuments() {
     if (dateTo)   p.set('date_to',    dateTo);
     if (minAmt)   p.set('min_amount', minAmt);
     if (maxAmt)   p.set('max_amount', maxAmt);
+    if (catFilt)  p.set('category',   catFilt);
     const data = await apiFetch('/documents?' + p.toString());
     docsTotal = data.total || 0;
     docsCache = data.documents || [];
