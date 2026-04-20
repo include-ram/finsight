@@ -142,7 +142,16 @@ class DBHandler:
             self._execute("""
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)
             """)
-            logger.info("Schema ensured (budget_goals, users.email)")
+            self._execute("""
+                CREATE TABLE IF NOT EXISTS document_notes (
+                    id          SERIAL PRIMARY KEY,
+                    document_id VARCHAR(64) NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    user_id     VARCHAR(64) NOT NULL,
+                    note_text   TEXT NOT NULL,
+                    created_at  TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            logger.info("Schema ensured (budget_goals, users.email, document_notes)")
         except Exception as exc:
             logger.warning("_ensure_tables skipped: %s", exc)
 
@@ -380,6 +389,30 @@ class DBHandler:
             " VALUES (%s, %s, %s, 1.0)",
             (document_id, field_name, field_value),
         )
+
+    # ── Document notes CRUD ───────────────────────────────────────────────────
+    def get_document_notes(self, document_id: str) -> list[dict]:
+        rows = self._execute(
+            "SELECT id, user_id, note_text, created_at FROM document_notes"
+            " WHERE document_id = %s ORDER BY created_at ASC",
+            (document_id,), fetch="all",
+        )
+        return [dict(r) for r in rows] if rows else []
+
+    def insert_document_note(self, document_id: str, user_id: str, note_text: str) -> dict:
+        row = self._execute(
+            "INSERT INTO document_notes (document_id, user_id, note_text)"
+            " VALUES (%s, %s, %s) RETURNING id, note_text, created_at",
+            (document_id, user_id, note_text), fetch="one",
+        )
+        return dict(row) if row else {}
+
+    def delete_document_note(self, note_id: int, user_id: str) -> bool:
+        self._execute(
+            "DELETE FROM document_notes WHERE id = %s AND user_id = %s",
+            (note_id, user_id),
+        )
+        return True
 
     # ── Budget goals CRUD ─────────────────────────────────────────────────────
     def get_budget_goals(self, user_id: str) -> list[dict]:

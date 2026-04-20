@@ -578,6 +578,43 @@ def update_fields(doc_id: str):
         return error_response(f"Failed to update fields: {exc}", 500)
 
 
+# ── Document notes ────────────────────────────────────────────────────────────
+@app.route("/documents/<doc_id>/notes", methods=["GET"])
+@login_required
+def get_notes(doc_id: str):
+    try:
+        notes = db.get_document_notes(doc_id)
+        return jsonify({"notes": notes})
+    except Exception as exc:
+        return error_response(f"Failed to load notes: {exc}", 500)
+
+
+@app.route("/documents/<doc_id>/notes", methods=["POST"])
+@login_required
+def add_note(doc_id: str):
+    data = request.get_json(force=True)
+    note_text = (data.get("note_text") or "").strip()
+    if not note_text:
+        return error_response("note_text is required")
+    if len(note_text) > 2000:
+        return error_response("Note must be under 2000 characters")
+    try:
+        note = db.insert_document_note(doc_id, current_user_id(), note_text)
+        return jsonify(note), 201
+    except Exception as exc:
+        return error_response(f"Failed to save note: {exc}", 500)
+
+
+@app.route("/documents/<doc_id>/notes/<int:note_id>", methods=["DELETE"])
+@login_required
+def delete_note(doc_id: str, note_id: int):
+    try:
+        db.delete_document_note(note_id, current_user_id())
+        return jsonify({"ok": True, "deleted": note_id})
+    except Exception as exc:
+        return error_response(f"Failed to delete note: {exc}", 500)
+
+
 # ── Budget goals ──────────────────────────────────────────────────────────────
 @app.route("/budget/goals", methods=["GET"])
 @login_required

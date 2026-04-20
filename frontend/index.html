@@ -309,6 +309,36 @@
 
     @media (max-width: 640px) { #insights-row { grid-template-columns: 1fr !important; } }
 
+    /* ── Notes ── */
+    .notes-list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.75rem 0; }
+    .note-item {
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 0.65rem 0.9rem;
+      font-size: 0.85rem;
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+    }
+    .note-text { flex: 1; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .note-meta { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem; }
+    .note-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 0; flex-shrink: 0; }
+    .note-del:hover { color: var(--danger); }
+    .notes-input-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .notes-input-row textarea {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.55rem 0.8rem;
+      color: var(--text);
+      font-size: 0.85rem;
+      resize: none;
+      min-height: 60px;
+      outline: none;
+    }
+    .notes-input-row textarea:focus { border-color: var(--accent); }
+
     /* ── Charts ── */
     .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
     .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; }
@@ -1041,6 +1071,7 @@ async function openDoc(id) {
   try {
     const doc = await apiFetch(`/documents/${id}`);
     renderModal(doc);
+    loadNotes(id);
   } catch (e) {
     document.getElementById('modal-body').innerHTML = `<div class="upload-result error">❌ ${e.message}</div>`;
   }
@@ -1108,12 +1139,74 @@ function renderModal(doc) {
       <button class="btn btn-outline btn-sm" onclick="toggleEditForm('${safeId}')">✏️ Edit Fields</button>
       <button class="btn btn-sm" style="background:var(--danger);" onclick="deleteDoc('${safeId}','${safeFn}')">Delete Document</button>
     </div>
+
+    <!-- Notes section -->
+    <div class="modal-section-title" style="margin-top:1.5rem;">Notes</div>
+    <div id="notes-list-${safeId}" class="notes-list"><div style="color:var(--muted);font-size:0.82rem;">Loading notes…</div></div>
+    <div class="notes-input-row">
+      <textarea id="note-input-${safeId}" placeholder="Add a note…" rows="2"></textarea>
+      <button class="btn btn-sm" style="align-self:flex-end;" onclick="addNote('${safeId}')">Add</button>
+    </div>
+    <div id="note-msg-${safeId}" style="font-size:0.78rem;margin-top:0.35rem;display:none;"></div>
   `;
 }
 
 function closeModal(e) {
   if (!e || e.target === document.getElementById('modal-overlay') || e === undefined)
     document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Document notes ────────────────────────────────────────────────────────────
+async function loadNotes(docId) {
+  const el = document.getElementById('notes-list-' + docId);
+  if (!el) return;
+  try {
+    const data = await apiFetch(`/documents/${docId}/notes`);
+    renderNotes(docId, data.notes || []);
+  } catch { if (el) el.innerHTML = '<div style="color:var(--muted);font-size:0.82rem;">Could not load notes.</div>'; }
+}
+
+function renderNotes(docId, notes) {
+  const el = document.getElementById('notes-list-' + docId);
+  if (!el) return;
+  if (!notes.length) { el.innerHTML = '<div style="color:var(--muted);font-size:0.82rem;">No notes yet.</div>'; return; }
+  el.innerHTML = notes.map(n => `
+    <div class="note-item" id="note-${n.id}">
+      <div style="flex:1;">
+        <div class="note-text">${n.note_text.replace(/</g,'&lt;')}</div>
+        <div class="note-meta">${fmtDate(n.created_at)}</div>
+      </div>
+      <button class="note-del" title="Delete note" onclick="deleteNote('${docId}',${n.id})">✕</button>
+    </div>`).join('');
+}
+
+async function addNote(docId) {
+  const inp  = document.getElementById('note-input-' + docId);
+  const msg  = document.getElementById('note-msg-'   + docId);
+  const text = (inp?.value || '').trim();
+  if (!text) return;
+  try {
+    await apiFetch(`/documents/${docId}/notes`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ note_text: text }),
+    });
+    inp.value = '';
+    msg.style.display = 'none';
+    await loadNotes(docId);
+  } catch (e) {
+    msg.style.display = ''; msg.style.color = 'var(--danger)'; msg.textContent = '✗ ' + e.message;
+  }
+}
+
+async function deleteNote(docId, noteId) {
+  try {
+    await apiFetch(`/documents/${docId}/notes/${noteId}`, { method: 'DELETE' });
+    const el = document.getElementById('note-' + noteId);
+    if (el) el.remove();
+    const list = document.getElementById('notes-list-' + docId);
+    if (list && !list.querySelector('.note-item'))
+      list.innerHTML = '<div style="color:var(--muted);font-size:0.82rem;">No notes yet.</div>';
+  } catch (e) { alert('Delete failed: ' + e.message); }
 }
 
 // ── Inline field editing ──────────────────────────────────────────────────────
