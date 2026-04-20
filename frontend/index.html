@@ -24,6 +24,18 @@
       --radius:   12px;
     }
 
+    /* ── Light theme overrides ── */
+    [data-theme="light"] {
+      --bg:       #f4f6fb;
+      --surface:  #ffffff;
+      --surface2: #eef0f7;
+      --border:   #d4d8e8;
+      --text:     #1a1d27;
+      --muted:    #6b7280;
+    }
+    [data-theme="light"] .activity-item:hover { background: #e4e8f5; }
+    [data-theme="light"] .auth-overlay { background: var(--bg); }
+
     body {
       background: var(--bg);
       color: var(--text);
@@ -541,6 +553,7 @@
     <div class="status-dot" id="status-dot"></div>
     <span class="status-label" id="status-label">Connecting…</span>
     <span id="username-badge" style="display:none;font-size:0.8rem;color:var(--accent2);font-weight:600;"></span>
+    <span class="email-bell" id="theme-toggle" title="Toggle light/dark mode" onclick="toggleTheme()" style="display:inline;">🌙</span>
     <span class="email-bell" id="email-bell" title="Email notification settings" onclick="openEmailSettings()">🔔</span>
     <span class="email-bell" id="pw-lock" title="Change password" onclick="openPwModal()" style="display:none;">🔑</span>
     <button id="logout-btn" class="btn btn-outline btn-sm" style="display:none;" onclick="doLogout()">Logout</button>
@@ -1824,6 +1837,23 @@ async function deleteDoc(id, filename) {
     closeModal(); loadRecent(); loadDocuments();
   } catch (e) { alert(`Delete failed: ${e.message}`); }
 }
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const next    = isLight ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  document.getElementById('theme-toggle').textContent = next === 'light' ? '☀️' : '🌙';
+  localStorage.setItem('finsight-theme', next);
+}
+(function applyStoredTheme() {
+  const saved = localStorage.getItem('finsight-theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = '☀️';
+  }
+})();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
