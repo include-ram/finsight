@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FinSight — Financial Document Intelligence</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -44,7 +46,6 @@
     }
     .logo { font-size: 1.4rem; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
     .logo span { color: var(--accent2); }
-    .tagline { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
     .header-right { margin-left: auto; display: flex; align-items: center; gap: 1rem; }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
     .status-dot.online { background: var(--accent2); }
@@ -247,11 +248,7 @@
     .badge.failed     { background: rgba(255,107,107,0.15); color: var(--danger); }
     .badge.category   { background: rgba(108,99,255,0.15); color: var(--accent); }
 
-    .empty-state {
-      text-align: center;
-      padding: 3rem;
-      color: var(--muted);
-    }
+    .empty-state { text-align: center; padding: 3rem; color: var(--muted); }
     .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
 
     /* ── Modal ── */
@@ -293,11 +290,7 @@
     .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 1.5rem; padding-right: 2rem; }
 
     .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
-    .field-item {
-      background: var(--surface2);
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-    }
+    .field-item { background: var(--surface2); border-radius: 8px; padding: 0.75rem 1rem; }
     .field-name { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.25rem; }
     .field-val  { font-size: 0.95rem; font-weight: 600; }
 
@@ -314,9 +307,7 @@
     }
     .preview-link:hover { text-decoration: underline; }
 
-    @media (max-width: 640px) {
-      #insights-row { grid-template-columns: 1fr !important; }
-    }
+    @media (max-width: 640px) { #insights-row { grid-template-columns: 1fr !important; } }
 
     /* ── Charts ── */
     .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
@@ -393,6 +384,88 @@
     .form-group input:focus { border-color: var(--accent); }
     .auth-error { background: rgba(255,107,107,0.1); border: 1px solid var(--danger); color: var(--danger); border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.85rem; margin-bottom: 1rem; display: none; }
 
+    /* ── Search / filter bar ── */
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    .filter-bar input, .filter-bar select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.45rem 0.75rem;
+      color: var(--text);
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .filter-bar input:focus { border-color: var(--accent); }
+    .filter-bar input[type=search] { flex: 1; min-width: 160px; }
+    .filter-bar input[type=date]   { width: 140px; }
+    .filter-bar input[type=number] { width: 100px; }
+
+    /* ── Budget goal progress ── */
+    .budget-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .budget-row:last-child { border-bottom: none; }
+    .budget-cat  { min-width: 110px; font-weight: 500; }
+    .budget-bar-wrap { flex: 1; height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
+    .budget-bar  { height: 100%; border-radius: 999px; transition: width 0.5s ease; }
+    .budget-meta { min-width: 150px; text-align: right; font-size: 0.78rem; color: var(--muted); }
+    .budget-over { color: var(--danger) !important; font-weight: 600; }
+
+    /* ── Budget editor rows ── */
+    .budget-edit-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .budget-edit-row:last-child { border-bottom: none; }
+    .budget-edit-row .cat-label { flex: 1; font-weight: 500; }
+    .budget-edit-row input {
+      width: 100px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.6rem;
+      color: var(--text);
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .budget-edit-row input:focus { border-color: var(--accent); }
+
+    /* ── Inline edit form in document modal ── */
+    .edit-form { display: none; margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+    .edit-form.open { display: block; }
+    .edit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+    .ef-group label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.3rem; }
+    .ef-group input, .ef-group select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.7rem;
+      color: var(--text);
+      font-size: 0.88rem;
+      outline: none;
+    }
+    .ef-group input:focus, .ef-group select:focus { border-color: var(--accent); }
+
+    /* ── Email bell icon ── */
+    .email-bell { font-size: 1rem; cursor: pointer; opacity: 0.6; display: none; }
+    .email-bell:hover { opacity: 1; }
+
     @media (max-width: 600px) {
       main { padding: 1rem; }
       .stats-row { grid-template-columns: 1fr 1fr; }
@@ -419,6 +492,10 @@
     <div id="auth-form-register" style="display:none;">
       <div class="form-group"><label>Username</label><input id="reg-user" type="text" placeholder="choose a username" autocomplete="username" /></div>
       <div class="form-group"><label>Password</label><input id="reg-pass" type="password" placeholder="at least 6 characters" autocomplete="new-password" /></div>
+      <div class="form-group">
+        <label>Email <span style="color:var(--muted);font-size:0.75rem;text-transform:none;">(optional — for notifications)</span></label>
+        <input id="reg-email" type="email" placeholder="you@example.com" autocomplete="email" />
+      </div>
       <button class="btn" style="width:100%;justify-content:center;margin-top:0.5rem;" onclick="doRegister()">Create Account</button>
     </div>
   </div>
@@ -426,13 +503,12 @@
 
 <!-- ── Header ─────────────────────────────────────────────── -->
 <header>
-  <div>
-    <div class="logo">Fin<span>Sight</span></div>
-  </div>
+  <div><div class="logo">Fin<span>Sight</span></div></div>
   <div class="header-right">
     <div class="status-dot" id="status-dot"></div>
     <span class="status-label" id="status-label">Connecting…</span>
     <span id="username-badge" style="display:none;font-size:0.8rem;color:var(--accent2);font-weight:600;"></span>
+    <span class="email-bell" id="email-bell" title="Email notification settings" onclick="openEmailSettings()">🔔</span>
     <button id="logout-btn" class="btn btn-outline btn-sm" style="display:none;" onclick="doLogout()">Logout</button>
   </div>
 </header>
@@ -457,7 +533,6 @@
         <div class="upload-title">Drag & drop files here</div>
         <div class="upload-sub">or click to browse &nbsp;·&nbsp; <strong>PDF, PNG, JPG, TIFF, BMP</strong> up to 50 MB each &nbsp;·&nbsp; multiple files OK</div>
       </div>
-
       <div id="upload-status" style="display:none; margin-top:1rem;">
         <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
         <div style="font-size:0.82rem; color:var(--muted); margin-bottom:0.5rem;" id="progress-label">Uploading…</div>
@@ -465,7 +540,6 @@
       </div>
     </div>
 
-    <!-- Recent uploads mini-list -->
     <div class="card" style="margin-top:1.5rem;">
       <div class="flex-between">
         <div class="card-title" style="margin-bottom:0;">Recent Uploads</div>
@@ -473,9 +547,7 @@
       </div>
       <div class="table-wrap" style="margin-top:1rem;">
         <table id="recent-table">
-          <thead><tr>
-            <th>File</th><th>Status</th><th>Category</th><th>Uploaded</th>
-          </tr></thead>
+          <thead><tr><th>File</th><th>Status</th><th>Category</th><th>Uploaded</th></tr></thead>
           <tbody id="recent-tbody">
             <tr class="loading-row"><td colspan="4"><span class="spinner"></span></td></tr>
           </tbody>
@@ -496,13 +568,23 @@
           <option value="failed">Failed</option>
         </select>
         <button class="btn btn-outline btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
-        <button class="btn btn-outline btn-sm" id="reprocess-all-btn" onclick="reprocessAll()" title="Re-run OCR on all documents to fix extracted amounts">↻ Reprocess All</button>
+        <button class="btn btn-outline btn-sm" id="reprocess-all-btn" onclick="reprocessAll()">↻ Reprocess All</button>
         <button class="btn btn-sm" onclick="loadDocuments()">Refresh</button>
       </div>
     </div>
 
-    <!-- Bulk action bar (hidden until rows selected) -->
-    <div id="bulk-bar" style="display:none; margin-top:0.75rem; background:rgba(108,99,255,0.1); border:1px solid var(--accent); border-radius:8px; padding:0.6rem 1rem; display:none; align-items:center; gap:1rem;">
+    <!-- Search + filter bar -->
+    <div class="filter-bar" style="margin-top:0.75rem;">
+      <input type="search" id="doc-search" placeholder="Search by filename or vendor…" oninput="debouncedSearch()" />
+      <input type="date" id="doc-date-from" onchange="docsOffset=0; loadDocuments()" title="From date" />
+      <input type="date" id="doc-date-to"   onchange="docsOffset=0; loadDocuments()" title="To date" />
+      <input type="number" id="doc-min-amt" placeholder="Min $" step="0.01" min="0" onchange="docsOffset=0; loadDocuments()" />
+      <input type="number" id="doc-max-amt" placeholder="Max $" step="0.01" min="0" onchange="docsOffset=0; loadDocuments()" />
+      <button class="btn btn-outline btn-sm" onclick="clearDocFilters()">Clear</button>
+    </div>
+
+    <!-- Bulk action bar -->
+    <div id="bulk-bar" style="display:none; margin-top:0.75rem; background:rgba(108,99,255,0.1); border:1px solid var(--accent); border-radius:8px; padding:0.6rem 1rem; align-items:center; gap:1rem;">
       <span id="bulk-count" style="font-size:0.85rem; color:var(--accent); font-weight:600;"></span>
       <button class="btn btn-sm" style="background:var(--danger);" onclick="bulkDelete()">Delete Selected</button>
       <button class="btn btn-outline btn-sm" onclick="clearSelection()">Clear</button>
@@ -513,10 +595,10 @@
         <table id="docs-table">
           <thead><tr>
             <th style="width:36px;"><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" style="cursor:pointer;" /></th>
-            <th class="sortable" onclick="sortBy('filename')" style="cursor:pointer;">File <span id="sort-filename"></span></th>
-            <th class="sortable" onclick="sortBy('status')" style="cursor:pointer;">Status <span id="sort-status"></span></th>
-            <th class="sortable" onclick="sortBy('category')" style="cursor:pointer;">Category <span id="sort-category"></span></th>
-            <th class="sortable" onclick="sortBy('upload_date')" style="cursor:pointer;">Uploaded <span id="sort-upload_date">↓</span></th>
+            <th onclick="sortBy('filename')" style="cursor:pointer;">File <span id="sort-filename"></span></th>
+            <th onclick="sortBy('status')" style="cursor:pointer;">Status <span id="sort-status"></span></th>
+            <th onclick="sortBy('category')" style="cursor:pointer;">Category <span id="sort-category"></span></th>
+            <th onclick="sortBy('upload_date')" style="cursor:pointer;">Uploaded <span id="sort-upload_date">↓</span></th>
             <th></th>
           </tr></thead>
           <tbody id="docs-tbody">
@@ -526,7 +608,6 @@
       </div>
     </div>
 
-    <!-- Pagination -->
     <div style="display:flex; align-items:center; justify-content:space-between; margin-top:1rem; font-size:0.85rem; color:var(--muted);">
       <span id="page-info">–</span>
       <div style="display:flex;gap:0.5rem;">
@@ -540,16 +621,15 @@
   <div class="tab-panel" id="tab-dashboard">
     <div class="flex-between">
       <h2 style="font-size:1.1rem; font-weight:700;">Dashboard</h2>
-      <div style="display:flex; gap:0.5rem; align-items:center;">
+      <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
         <input type="month" id="month-filter" class="btn btn-outline btn-sm"
-               style="font-size:0.8rem; padding:0.35rem 0.75rem; background:var(--surface2);"
-               title="Filter by month" />
+               style="font-size:0.8rem; padding:0.35rem 0.75rem; background:var(--surface2);" />
+        <button class="btn btn-outline btn-sm" onclick="exportPDF()">📄 Export PDF</button>
         <button class="btn btn-sm" onclick="loadDashboard()">Refresh</button>
       </div>
     </div>
 
-    <!-- Stat cards row 1 -->
-    <div class="stats-row" style="margin-top:1rem;" id="stat-cards">
+    <div class="stats-row" style="margin-top:1rem;">
       <div class="stat-card green-accent">
         <div class="stat-label">Total Income</div>
         <div class="stat-value green" id="stat-income">–</div>
@@ -582,8 +662,7 @@
       </div>
     </div>
 
-    <!-- Income vs Expenses ratio bar -->
-    <div class="card" style="margin-bottom:1.5rem; padding:1rem 1.5rem;" id="ratio-card">
+    <div class="card" style="margin-bottom:1.5rem; padding:1rem 1.5rem;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
         <span style="font-size:0.82rem; font-weight:600;">Income vs Expenses</span>
         <span style="font-size:0.78rem; color:var(--muted);" id="ratio-label">–</span>
@@ -598,24 +677,27 @@
       </div>
     </div>
 
-    <!-- Quick Insights + Recent Activity side by side -->
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;" id="insights-row">
       <div class="card">
         <div class="card-title">Quick Insights</div>
-        <div class="insights-grid" id="insights-grid">
-          <div style="color:var(--muted); font-size:0.85rem;">Loading…</div>
-        </div>
+        <div class="insights-grid" id="insights-grid"><div style="color:var(--muted); font-size:0.85rem;">Loading…</div></div>
       </div>
       <div class="card">
         <div class="card-title">Recent Activity</div>
-        <div class="activity-list" id="activity-list">
-          <div style="color:var(--muted); font-size:0.85rem;">Loading…</div>
-        </div>
+        <div class="activity-list" id="activity-list"><div style="color:var(--muted); font-size:0.85rem;">Loading…</div></div>
       </div>
     </div>
 
-    <!-- Charts -->
-    <div class="charts-grid" id="charts-area">
+    <!-- Budget Goals card -->
+    <div class="card" style="margin-bottom:1.5rem;">
+      <div class="flex-between" style="margin-bottom:0.75rem;">
+        <div class="card-title" style="margin-bottom:0;">Budget Goals</div>
+        <button class="btn btn-outline btn-sm" onclick="openBudgetModal()">+ Set Goals</button>
+      </div>
+      <div id="budget-goals-list"><div style="color:var(--muted);font-size:0.85rem;">No budget goals set yet.</div></div>
+    </div>
+
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title">Spending by Category</div>
         <div class="chart-container"><canvas id="chart-category"></canvas></div>
@@ -650,28 +732,60 @@
   </div>
 </div>
 
+<!-- ── Budget Goals Modal ────────────────────────────────────── -->
+<div class="modal-overlay" id="budget-modal-overlay" onclick="closeBudgetModal(event)">
+  <div class="modal" style="max-width:500px;">
+    <button class="modal-close" onclick="closeBudgetModal()">✕</button>
+    <div class="modal-title">Set Monthly Budget Goals</div>
+    <p style="font-size:0.83rem;color:var(--muted);margin-bottom:1rem;">Enter a monthly spending limit per category. Leave blank to remove a goal.</p>
+    <div id="budget-edit-list"></div>
+    <div style="margin-top:1.25rem;display:flex;gap:0.75rem;">
+      <button class="btn" style="flex:1;justify-content:center;" onclick="saveBudgetGoals()">Save Goals</button>
+      <button class="btn btn-outline" onclick="closeBudgetModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Email Settings Modal ──────────────────────────────────── -->
+<div class="modal-overlay" id="email-modal-overlay" onclick="closeEmailSettings(event)">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" onclick="closeEmailSettings()">✕</button>
+    <div class="modal-title">Email Notifications</div>
+    <p style="font-size:0.83rem;color:var(--muted);margin-bottom:1rem;">
+      Receive an email after each document is processed. Both sender and recipient must be verified in AWS SES Sandbox.
+    </p>
+    <div class="form-group">
+      <label>Your Email Address</label>
+      <input id="email-input" type="email" placeholder="you@example.com" />
+    </div>
+    <div id="email-save-msg" style="font-size:0.82rem;margin-bottom:0.75rem;display:none;"></div>
+    <div style="display:flex;gap:0.75rem;">
+      <button class="btn" style="flex:1;justify-content:center;" onclick="saveEmail()">Save</button>
+      <button class="btn btn-outline" onclick="closeEmailSettings()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Config ───────────────────────────────────────────────────────────────────
-// When served via nginx, calls go to the same origin — no CORS issue.
-// For local file:// access, point this to your backend URL.
-const API = '';   // empty = same origin (nginx proxy); set to 'http://localhost:5000' for direct
+const API = '';   // empty = same origin (nginx proxy); set to 'http://localhost:5000' for direct dev
 
 // ── State ────────────────────────────────────────────────────────────────────
-let docsOffset = 0;
-const docsLimit = 20;
-let docsTotal   = 0;
-let docsCache   = [];   // current page data for client-side sort
-let sortCol     = 'upload_date';
-let sortDir     = 'desc';
-let selectedIds = new Set();
-let charts = {};
+let docsOffset    = 0;
+const docsLimit   = 20;
+let docsTotal     = 0;
+let docsCache     = [];
+let sortCol       = 'upload_date';
+let sortDir       = 'desc';
+let selectedIds   = new Set();
+let charts        = {};
+let budgetGoals   = {};
+let dashByCat     = {};
+let currentEmail  = '';
 
 // ── Utility ──────────────────────────────────────────────────────────────────
-const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-const fmtAmt = v => {
-  const n = parseFloat(v);
-  return isNaN(n) ? v : fmt.format(n);
-};
+const fmt    = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const fmtAmt = v => { const n = parseFloat(v); return isNaN(n) ? v : fmt.format(n); };
 const fmtDate = iso => {
   if (!iso) return '–';
   try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
@@ -693,7 +807,7 @@ async function apiFetch(path, opts = {}) {
   return res.json();
 }
 
-// ── Health / status ──────────────────────────────────────────────────────────
+// ── Health ────────────────────────────────────────────────────────────────────
 async function checkHealth() {
   try {
     await apiFetch('/health');
@@ -720,8 +834,7 @@ const input = document.getElementById('file-input');
 zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
 zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
 zone.addEventListener('drop', e => {
-  e.preventDefault();
-  zone.classList.remove('dragover');
+  e.preventDefault(); zone.classList.remove('dragover');
   if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
 });
 input.addEventListener('change', () => { if (input.files.length) uploadFiles(input.files); });
@@ -731,58 +844,41 @@ async function uploadFiles(files) {
   const bar       = document.getElementById('progress-bar');
   const label     = document.getElementById('progress-label');
   const result    = document.getElementById('upload-result');
-
-  const fileList = Array.from(files);
+  const fileList  = Array.from(files);
   statusDiv.style.display = 'block';
   result.innerHTML = '';
   bar.style.width = '0%';
-
   let succeeded = 0, failed = 0;
 
   for (let i = 0; i < fileList.length; i++) {
-    const file = fileList[i];
-    label.textContent = `Uploading ${file.name} (${i + 1} of ${fileList.length})…`;
-
-    // Row placeholder
+    const file  = fileList[i];
     const rowId = 'upload-row-' + i;
+    label.textContent = `Uploading ${file.name} (${i + 1} of ${fileList.length})…`;
     result.insertAdjacentHTML('beforeend',
-      `<div id="${rowId}" class="upload-result" style="background:rgba(255,255,255,0.03); border:1px solid var(--border); color:var(--muted);">
+      `<div id="${rowId}" class="upload-result" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--muted);">
         ⏳ <strong>${file.name}</strong> — uploading…
       </div>`);
-
-    // Animate bar for this file
     const startPct = (i / fileList.length) * 100;
     const endPct   = ((i + 1) / fileList.length) * 100;
     bar.style.width = startPct + '%';
     let pct = startPct;
-    const ticker = setInterval(() => {
-      pct = Math.min(pct + Math.random() * 8, endPct - 2);
-      bar.style.width = pct + '%';
-    }, 200);
-
+    const ticker = setInterval(() => { pct = Math.min(pct + Math.random() * 8, endPct - 2); bar.style.width = pct + '%'; }, 200);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res  = await fetch(API + '/upload', { method: 'POST', body: fd });
+      const fd = new FormData(); fd.append('file', file);
+      const res  = await fetch(API + '/upload', { method: 'POST', body: fd, credentials: 'include' });
       const data = await res.json();
-
-      clearInterval(ticker);
-      bar.style.width = endPct + '%';
-
+      clearInterval(ticker); bar.style.width = endPct + '%';
       const row = document.getElementById(rowId);
       if (res.ok || res.status === 201) {
         succeeded++;
         row.className = 'upload-result success';
-        row.innerHTML = `✅ <strong>${file.name}</strong> —
-          Category: <strong>${data.category || data.categories?.[0]?.category || '–'}</strong>`;
+        row.innerHTML = `✅ <strong>${file.name}</strong> — Category: <strong>${data.category || data.categories?.[0]?.category || '–'}</strong>`;
       } else {
-        failed++;
-        row.className = 'upload-result error';
+        failed++; row.className = 'upload-result error';
         row.innerHTML = `❌ <strong>${file.name}</strong> — ${data.error || 'Upload failed'}`;
       }
     } catch (e) {
-      clearInterval(ticker);
-      failed++;
+      clearInterval(ticker); failed++;
       const row = document.getElementById(rowId);
       row.className = 'upload-result error';
       row.innerHTML = `❌ <strong>${file.name}</strong> — ${e.message}`;
@@ -793,19 +889,17 @@ async function uploadFiles(files) {
   label.textContent = fileList.length === 1
     ? (failed ? 'Upload failed.' : 'Processing complete!')
     : `Done: ${succeeded} succeeded${failed ? ', ' + failed + ' failed' : ''}.`;
-
   if (succeeded) {
     result.insertAdjacentHTML('beforeend',
-      `<div style="margin-top:0.75rem; font-size:0.85rem;">
-        <a href="#" style="color:var(--accent2);" onclick="switchTab('documents'); return false;">View in Documents →</a>
+      `<div style="margin-top:0.75rem;font-size:0.85rem;">
+        <a href="#" style="color:var(--accent2);" onclick="switchTab('documents');return false;">View in Documents →</a>
       </div>`);
     loadRecent();
   }
-
   input.value = '';
 }
 
-// ── Recent uploads (Upload tab) ───────────────────────────────────────────────
+// ── Recent uploads ────────────────────────────────────────────────────────────
 async function loadRecent() {
   const tbody = document.getElementById('recent-tbody');
   try {
@@ -817,33 +911,55 @@ async function loadRecent() {
 }
 
 // ── Documents tab ─────────────────────────────────────────────────────────────
-async function loadDocuments() {
-  const tbody  = document.getElementById('docs-tbody');
-  const status = document.getElementById('status-filter').value;
-  tbody.innerHTML = `<tr class="loading-row"><td colspan="5"><span class="spinner"></span></td></tr>`;
+let searchTimer = null;
+function debouncedSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { docsOffset = 0; loadDocuments(); }, 350);
+}
 
+function clearDocFilters() {
+  ['doc-search','doc-date-from','doc-date-to','doc-min-amt','doc-max-amt'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  docsOffset = 0; loadDocuments();
+}
+
+async function loadDocuments() {
+  const tbody    = document.getElementById('docs-tbody');
+  const status   = document.getElementById('status-filter').value;
+  const search   = document.getElementById('doc-search')?.value    || '';
+  const dateFrom = document.getElementById('doc-date-from')?.value || '';
+  const dateTo   = document.getElementById('doc-date-to')?.value   || '';
+  const minAmt   = document.getElementById('doc-min-amt')?.value   || '';
+  const maxAmt   = document.getElementById('doc-max-amt')?.value   || '';
+  tbody.innerHTML = `<tr class="loading-row"><td colspan="6"><span class="spinner"></span></td></tr>`;
   try {
-    const qs   = `?limit=${docsLimit}&offset=${docsOffset}` + (status ? `&status=${status}` : '');
-    const data = await apiFetch('/documents' + qs);
-    docsTotal  = data.total || 0;
-    docsCache  = data.documents || [];
+    const p = new URLSearchParams({ limit: docsLimit, offset: docsOffset });
+    if (status)   p.set('status',     status);
+    if (search)   p.set('search',     search);
+    if (dateFrom) p.set('date_from',  dateFrom);
+    if (dateTo)   p.set('date_to',    dateTo);
+    if (minAmt)   p.set('min_amount', minAmt);
+    if (maxAmt)   p.set('max_amount', maxAmt);
+    const data = await apiFetch('/documents?' + p.toString());
+    docsTotal = data.total || 0;
+    docsCache = data.documents || [];
     renderDocRows(docsCache, tbody, true);
     updatePagination();
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:1.5rem;">Error: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:1.5rem;">Error: ${e.message}</td></tr>`;
   }
 }
 
 function renderDocRows(docs, tbody, showDetail) {
   if (!docs.length) {
     tbody.innerHTML = `<tr><td colspan="${showDetail ? 6 : 4}">
-      <div class="empty-state"><div class="icon">📂</div>No documents yet</div>
-    </td></tr>`;
+      <div class="empty-state"><div class="icon">📂</div>No documents found</div></td></tr>`;
     return;
   }
   tbody.innerHTML = docs.map(d => {
-    const cat = d.category || d.categories?.[0]?.category || null;
-    const fn  = d.filename.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const cat     = d.category || d.categories?.[0]?.category || null;
+    const fn      = d.filename.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const checked = selectedIds.has(d.id) ? 'checked' : '';
     return `<tr onclick="${showDetail ? `openDoc('${d.id}')` : ''}" id="row-${d.id}">
       ${showDetail ? `<td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleRow('${d.id}',this)" style="cursor:pointer;" /></td>` : '<td></td>'}
@@ -864,7 +980,7 @@ function sortBy(col) {
   if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
   else { sortCol = col; sortDir = 'asc'; }
   document.querySelectorAll('[id^="sort-"]').forEach(el => el.textContent = '');
-  document.getElementById('sort-' + col).textContent = sortDir === 'asc' ? '↑' : '↓';
+  const el = document.getElementById('sort-' + col); if (el) el.textContent = sortDir === 'asc' ? '↑' : '↓';
   const sorted = [...docsCache].sort((a, b) => {
     let av = a[col] ?? '', bv = b[col] ?? '';
     if (col === 'upload_date') { av = new Date(av); bv = new Date(bv); }
@@ -874,52 +990,37 @@ function sortBy(col) {
   renderDocRows(sorted, document.getElementById('docs-tbody'), true);
 }
 
-// ── Select / Bulk delete ──────────────────────────────────────────────────────
-function toggleRow(id, cb) {
-  cb.checked ? selectedIds.add(id) : selectedIds.delete(id);
-  updateBulkBar();
-}
-
+// ── Bulk select / delete ──────────────────────────────────────────────────────
+function toggleRow(id, cb) { cb.checked ? selectedIds.add(id) : selectedIds.delete(id); updateBulkBar(); }
 function toggleSelectAll(cb) {
   docsCache.forEach(d => cb.checked ? selectedIds.add(d.id) : selectedIds.delete(d.id));
   document.querySelectorAll('#docs-tbody input[type=checkbox]').forEach(c => c.checked = cb.checked);
   updateBulkBar();
 }
-
 function clearSelection() {
   selectedIds.clear();
   document.querySelectorAll('#docs-tbody input[type=checkbox]').forEach(c => c.checked = false);
   document.getElementById('select-all').checked = false;
   updateBulkBar();
 }
-
 function updateBulkBar() {
   const bar = document.getElementById('bulk-bar');
   if (selectedIds.size > 0) {
     bar.style.display = 'flex';
     document.getElementById('bulk-count').textContent = `${selectedIds.size} document${selectedIds.size > 1 ? 's' : ''} selected`;
-  } else {
-    bar.style.display = 'none';
-  }
+  } else { bar.style.display = 'none'; }
 }
-
 async function bulkDelete() {
   const count = selectedIds.size;
   if (!confirm(`Delete ${count} document${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
-  const ids = [...selectedIds];
-  await Promise.all(ids.map(id => apiFetch(`/documents/${id}`, { method: 'DELETE' }).catch(() => {})));
-  selectedIds.clear();
-  updateBulkBar();
-  loadDocuments();
-  loadRecent();
+  await Promise.all([...selectedIds].map(id => apiFetch(`/documents/${id}`, { method: 'DELETE' }).catch(() => {})));
+  selectedIds.clear(); updateBulkBar(); loadDocuments(); loadRecent();
 }
 
 // ── CSV export ────────────────────────────────────────────────────────────────
 function exportCSV() {
   const a = document.createElement('a');
-  a.href = API + '/documents/export';
-  a.download = 'finsight_export.csv';
-  a.click();
+  a.href = API + '/documents/export'; a.download = 'finsight_export.csv'; a.click();
 }
 
 function updatePagination() {
@@ -929,12 +1030,7 @@ function updatePagination() {
   document.getElementById('prev-btn').disabled = docsOffset === 0;
   document.getElementById('next-btn').disabled = docsOffset + docsLimit >= docsTotal;
 }
-
-function changePage(dir) {
-  docsOffset = Math.max(0, docsOffset + dir * docsLimit);
-  loadDocuments();
-}
-
+function changePage(dir) { docsOffset = Math.max(0, docsOffset + dir * docsLimit); loadDocuments(); }
 document.getElementById('status-filter').addEventListener('change', () => { docsOffset = 0; loadDocuments(); });
 
 // ── Document detail modal ─────────────────────────────────────────────────────
@@ -942,7 +1038,6 @@ async function openDoc(id) {
   document.getElementById('modal-title').textContent = 'Loading…';
   document.getElementById('modal-body').innerHTML = `<div style="text-align:center;padding:2rem;"><span class="spinner"></span></div>`;
   document.getElementById('modal-overlay').classList.add('open');
-
   try {
     const doc = await apiFetch(`/documents/${id}`);
     renderModal(doc);
@@ -953,7 +1048,6 @@ async function openDoc(id) {
 
 function renderModal(doc) {
   document.getElementById('modal-title').textContent = doc.filename;
-
   const cat     = doc.categories?.[0];
   const fields  = doc.extracted_data || [];
   const preview = doc.presigned_url;
@@ -965,11 +1059,20 @@ function renderModal(doc) {
            <div class="field-name">${f.field_name}</div>
            <div class="field-val">${
              f.field_name.includes('amount') || f.field_name.includes('total') || f.field_name.includes('balance')
-               ? fmtAmt(f.field_value)
-               : f.field_value
+               ? fmtAmt(f.field_value) : f.field_value
            }</div>
          </div>`).join('')}</div>`
     : `<div style="color:var(--muted);font-size:0.875rem;margin:1rem 0;">No extracted fields available.</div>`;
+
+  const catName   = cat ? cat.category : '';
+  const vendorVal = (fields.find(f => f.field_name === 'vendor_name')  || {}).field_value || '';
+  const amountVal = (fields.find(f => f.field_name === 'total_amount') || {}).field_value || '';
+  const dateVal   = (fields.find(f => f.field_name === 'primary_date') || {}).field_value || '';
+
+  const ALL_CATS  = ['Income','Utilities','Food','Medical','Insurance','Tax','Rent','Travel','Shopping','Subscription','Other'];
+  const catOpts   = ALL_CATS.map(c => `<option value="${c}" ${c===catName?'selected':''}>${c}</option>`).join('');
+  const safeId    = doc.id;
+  const safeFn    = doc.filename.replace(/'/g, "\\'");
 
   document.getElementById('modal-body').innerHTML = `
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.25rem;">
@@ -984,18 +1087,68 @@ function renderModal(doc) {
       <a class="preview-link" href="${preview}" target="_blank" rel="noopener">
         ↗ Open original document (S3 link, expires in 1 hour)
       </a>` : ''}
-    <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);">
-      <button class="btn btn-sm" style="background:var(--danger);"
-        onclick="deleteDoc('${doc.id}','${doc.filename.replace(/'/g,"\\'")}')">
-        Delete Document
-      </button>
+
+    <!-- Inline edit form -->
+    <div class="edit-form" id="edit-form-${safeId}">
+      <div class="modal-section-title">Edit Fields</div>
+      <div class="edit-grid">
+        <div class="ef-group"><label>Category</label><select id="ef-category">${catOpts}</select></div>
+        <div class="ef-group"><label>Vendor / Source</label><input id="ef-vendor" type="text" value="${vendorVal.replace(/"/g,'&quot;')}" placeholder="Vendor name" /></div>
+        <div class="ef-group"><label>Amount ($)</label><input id="ef-amount" type="number" step="0.01" value="${amountVal}" placeholder="0.00" /></div>
+        <div class="ef-group"><label>Document Date</label><input id="ef-date" type="text" value="${dateVal.replace(/"/g,'&quot;')}" placeholder="e.g. April 15, 2024" /></div>
+      </div>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="btn btn-sm" onclick="saveDocEdits('${safeId}')">Save Changes</button>
+        <button class="btn btn-outline btn-sm" onclick="toggleEditForm('${safeId}')">Cancel</button>
+      </div>
+      <div id="edit-msg-${safeId}" style="font-size:0.8rem;margin-top:0.5rem;display:none;"></div>
+    </div>
+
+    <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <button class="btn btn-outline btn-sm" onclick="toggleEditForm('${safeId}')">✏️ Edit Fields</button>
+      <button class="btn btn-sm" style="background:var(--danger);" onclick="deleteDoc('${safeId}','${safeFn}')">Delete Document</button>
     </div>
   `;
 }
 
 function closeModal(e) {
-  if (!e || e.target === document.getElementById('modal-overlay') || e === undefined) {
+  if (!e || e.target === document.getElementById('modal-overlay') || e === undefined)
     document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Inline field editing ──────────────────────────────────────────────────────
+function toggleEditForm(docId) {
+  const form = document.getElementById('edit-form-' + docId);
+  if (form) form.classList.toggle('open');
+}
+
+async function saveDocEdits(docId) {
+  const category = document.getElementById('ef-category').value;
+  const vendor   = document.getElementById('ef-vendor').value.trim();
+  const amount   = document.getElementById('ef-amount').value.trim();
+  const date     = document.getElementById('ef-date').value.trim();
+  const msgEl    = document.getElementById('edit-msg-' + docId);
+  try {
+    await apiFetch(`/documents/${docId}/category`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ category }),
+    });
+    const fields = {};
+    if (vendor) fields.vendor_name  = vendor;
+    if (amount) fields.total_amount = amount;
+    if (date)   fields.primary_date = date;
+    if (Object.keys(fields).length) {
+      await apiFetch(`/documents/${docId}/fields`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(fields),
+      });
+    }
+    msgEl.style.display = ''; msgEl.style.color = 'var(--accent2)';
+    msgEl.textContent = '✓ Saved — reloading…';
+    setTimeout(() => { openDoc(docId); loadRecent(); }, 800);
+  } catch (e) {
+    msgEl.style.display = ''; msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = '✗ ' + e.message;
   }
 }
 
@@ -1003,9 +1156,11 @@ function closeModal(e) {
 async function loadDashboard() {
   const month = document.getElementById('month-filter').value;
   const qs    = month ? `?month=${month}` : '';
-
   try {
-    const data = await apiFetch('/dashboard/summary' + qs);
+    const [data] = await Promise.all([
+      apiFetch('/dashboard/summary' + qs),
+      loadBudgetGoals(),
+    ]);
     renderDashboard(data);
   } catch (e) {
     ['stat-income','stat-expenses','stat-net','stat-docs'].forEach(id =>
@@ -1019,47 +1174,41 @@ function renderDashboard(data) {
   const expenses = data.total_expenses ?? 0;
   const net      = income - expenses;
   const monthly  = data.monthly_cashflow || [];
+  dashByCat      = data.by_category || {};
+  renderBudgetGoals();
 
-  // ── Stat cards ──────────────────────────────────────────────────────────────
   document.getElementById('stat-income').textContent   = fmt.format(income);
   document.getElementById('stat-expenses').textContent = fmt.format(expenses);
   document.getElementById('stat-net').textContent      = fmt.format(net);
   document.getElementById('stat-net').style.color      = net >= 0 ? 'var(--accent2)' : 'var(--danger)';
   document.getElementById('stat-net-sub').textContent  = net >= 0 ? 'surplus' : 'deficit';
 
-  // Savings rate
   const savingsRate = income > 0 ? ((net / income) * 100) : 0;
   const savEl = document.getElementById('stat-savings');
   savEl.textContent = (savingsRate >= 0 ? '+' : '') + savingsRate.toFixed(1) + '%';
   savEl.style.color = savingsRate >= 0 ? 'var(--warn)' : 'var(--danger)';
 
-  // Avg monthly spend
   const avgSpend = monthly.length > 0 ? expenses / monthly.length : expenses;
   document.getElementById('stat-avg-spend').textContent = fmt.format(avgSpend);
   document.getElementById('stat-avg-sub').textContent   = monthly.length > 1 ? `over ${monthly.length} months` : 'this month';
 
-  // Month-over-month trend arrows on income/expenses
   if (monthly.length >= 2) {
-    const last = monthly[monthly.length - 1];
-    const prev = monthly[monthly.length - 2];
+    const last = monthly[monthly.length - 1], prev = monthly[monthly.length - 2];
     const expChg = prev.expenses > 0 ? ((last.expenses - prev.expenses) / prev.expenses * 100) : 0;
     const incChg = prev.income   > 0 ? ((last.income   - prev.income)   / prev.income   * 100) : 0;
-    const expEl = document.getElementById('stat-expenses-trend');
-    const incEl = document.getElementById('stat-income-trend');
+    const expEl  = document.getElementById('stat-expenses-trend');
+    const incEl  = document.getElementById('stat-income-trend');
     expEl.textContent = (expChg >= 0 ? '▲ ' : '▼ ') + Math.abs(expChg).toFixed(1) + '% vs prev month';
     expEl.className   = 'stat-trend ' + (expChg > 0 ? 'down' : 'up');
     incEl.textContent = (incChg >= 0 ? '▲ ' : '▼ ') + Math.abs(incChg).toFixed(1) + '% vs prev month';
     incEl.className   = 'stat-trend ' + (incChg >= 0 ? 'up' : 'down');
   }
 
-  // Docs breakdown
-  const counts = data.document_counts || {};
+  const counts    = data.document_counts || {};
   const totalDocs = Object.values(counts).reduce((a, b) => a + Number(b), 0);
-  document.getElementById('stat-docs').textContent = totalDocs || '–';
-  const completed = Number(counts.completed || 0);
-  document.getElementById('stat-docs-sub').textContent = completed ? `${completed} processed` : '';
+  document.getElementById('stat-docs').textContent     = totalDocs || '–';
+  document.getElementById('stat-docs-sub').textContent = Number(counts.completed || 0) ? `${counts.completed} processed` : '';
 
-  // ── Ratio bar ───────────────────────────────────────────────────────────────
   const total = income + expenses;
   const iPct  = total > 0 ? (income   / total * 100) : 50;
   const ePct  = total > 0 ? (expenses / total * 100) : 50;
@@ -1068,50 +1217,31 @@ function renderDashboard(data) {
   document.getElementById('ratio-label').textContent =
     total > 0 ? `${iPct.toFixed(0)}% income · ${ePct.toFixed(0)}% expenses` : '–';
 
-  // ── Quick Insights ──────────────────────────────────────────────────────────
   renderInsights(data);
-
-  // ── Recent Activity ─────────────────────────────────────────────────────────
   renderActivity();
-
-  // ── Charts ──────────────────────────────────────────────────────────────────
-  drawCategoryChart(data.by_category     || {});
+  drawCategoryChart(dashByCat);
   drawMonthlyChart(monthly);
-  drawVendorChart(data.top_vendors       || []);
+  drawVendorChart(data.top_vendors || []);
   drawTrendChart(monthly);
-  renderCategoryBreakdown(data.by_category || {}, expenses);
+  renderCategoryBreakdown(dashByCat, expenses);
 }
 
 function renderInsights(data) {
-  const income   = data.total_income   ?? 0;
+  const income  = data.total_income   ?? 0;
   const expenses = data.total_expenses ?? 0;
-  const monthly  = data.monthly_cashflow || [];
-  const vendors  = data.top_vendors || [];
-  const bycat    = data.by_category || {};
+  const monthly = data.monthly_cashflow || [];
+  const vendors = data.top_vendors || [];
+  const bycat   = data.by_category || {};
+  const items   = [];
 
-  const items = [];
-
-  // Top expense category
   const cats = Object.entries(bycat).filter(([k]) => k !== 'Income').sort((a,b) => b[1]-a[1]);
-  if (cats.length) {
-    items.push({ icon: '📊', text: `<strong>Top expense:</strong> <span>${cats[0][0]} at ${fmt.format(cats[0][1])}</span>` });
-  }
-
-  // Top vendor
-  if (vendors.length) {
-    items.push({ icon: '🏪', text: `<strong>Biggest vendor:</strong> <span>${vendors[0].vendor} — ${fmt.format(vendors[0].total_spend)}</span>` });
-  }
-
-  // MoM change
+  if (cats.length) items.push({ icon: '📊', text: `<strong>Top expense:</strong> <span>${cats[0][0]} at ${fmt.format(cats[0][1])}</span>` });
+  if (vendors.length) items.push({ icon: '🏪', text: `<strong>Biggest vendor:</strong> <span>${vendors[0].vendor} — ${fmt.format(vendors[0].total_spend)}</span>` });
   if (monthly.length >= 2) {
-    const last = monthly[monthly.length - 1];
-    const prev = monthly[monthly.length - 2];
-    const chg = prev.expenses > 0 ? ((last.expenses - prev.expenses) / prev.expenses * 100) : 0;
-    const dir = chg > 0 ? 'more' : 'less';
-    items.push({ icon: chg > 0 ? '📈' : '📉', text: `<strong>${Math.abs(chg).toFixed(0)}% ${dir}</strong> <span>spent in ${last.month} vs ${prev.month}</span>` });
+    const last = monthly[monthly.length - 1], prev = monthly[monthly.length - 2];
+    const chg  = prev.expenses > 0 ? ((last.expenses - prev.expenses) / prev.expenses * 100) : 0;
+    items.push({ icon: chg > 0 ? '📈' : '📉', text: `<strong>${Math.abs(chg).toFixed(0)}% ${chg > 0 ? 'more' : 'less'}</strong> <span>spent in ${last.month} vs ${prev.month}</span>` });
   }
-
-  // Savings message
   const rate = income > 0 ? (income - expenses) / income * 100 : 0;
   if (income > 0) {
     const msg = rate >= 20 ? 'Great job! Saving over 20% of income.'
@@ -1120,23 +1250,14 @@ function renderInsights(data) {
               :              'Spending exceeds income this period.';
     items.push({ icon: rate >= 10 ? '✅' : '⚠️', text: `<strong>${msg}</strong>` });
   }
-
-  // Number of categories used
-  if (cats.length > 1) {
-    items.push({ icon: '🗂️', text: `Expenses spread across <strong>${cats.length} categories</strong>` });
-  }
-
-  // Best month
+  if (cats.length > 1) items.push({ icon: '🗂️', text: `Expenses spread across <strong>${cats.length} categories</strong>` });
   if (monthly.length >= 2) {
     const best = [...monthly].sort((a,b) => b.net - a.net)[0];
     items.push({ icon: '🌟', text: `<strong>Best month:</strong> <span>${best.month} (net ${fmt.format(best.net)})</span>` });
   }
 
   const grid = document.getElementById('insights-grid');
-  if (!items.length) {
-    grid.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">Upload more documents to generate insights.</div>';
-    return;
-  }
+  if (!items.length) { grid.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">Upload more documents to generate insights.</div>'; return; }
   grid.innerHTML = items.map(i =>
     `<div class="insight-item"><div class="insight-icon">${i.icon}</div><div class="insight-text">${i.text}</div></div>`
   ).join('');
@@ -1146,13 +1267,13 @@ async function renderActivity() {
   const el = document.getElementById('activity-list');
   try {
     const data = await apiFetch('/documents?limit=6&offset=0');
-    const docs = data.documents || [];
+    const docs  = data.documents || [];
     if (!docs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">No documents yet.</div>'; return; }
-    const icons = { Income: '💰', Food: '🍔', Utilities: '⚡', Travel: '🚗', Medical: '🏥', Insurance: '🛡️', Housing: '🏠', Entertainment: '🎬' };
+    const icons = { Income:'💰', Food:'🍔', Utilities:'⚡', Travel:'🚗', Medical:'🏥', Insurance:'🛡️', Rent:'🏠', Entertainment:'🎬', Shopping:'🛒', Subscription:'📺' };
     el.innerHTML = docs.map(d => {
       const icon = icons[d.category] || '📄';
       const amt  = d.total_amount ? fmt.format(d.total_amount) : '–';
-      return `<div class="activity-item" onclick="showDocDetail('${d.id}')">
+      return `<div class="activity-item" onclick="openDoc('${d.id}')">
         <div class="activity-icon">${icon}</div>
         <div class="activity-name">
           <div class="fname">${d.filename}</div>
@@ -1166,19 +1287,16 @@ async function renderActivity() {
 }
 
 function renderCategoryBreakdown(bycat, totalExpenses) {
-  const el = document.getElementById('category-breakdown-table');
+  const el      = document.getElementById('category-breakdown-table');
   const entries = Object.entries(bycat).sort((a,b) => b[1]-a[1]);
   if (!entries.length) { el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">No data.</div>'; return; }
-  const catColors = { Income:'var(--accent2)', Food:'#f9844a', Utilities:'#4895ef', Travel:'#f72585', Medical:'#7209b7', Housing:'#3a0ca3', Entertainment:'#480ca8' };
+  const catColors = { Income:'var(--accent2)', Food:'#f9844a', Utilities:'#4895ef', Travel:'#f72585', Medical:'#7209b7', Rent:'#3a0ca3', Shopping:'#480ca8' };
   el.innerHTML = entries.map(([cat, amt]) => {
     const pct = totalExpenses > 0 && cat !== 'Income' ? (amt / totalExpenses * 100).toFixed(1) : '–';
     const col = catColors[cat] || 'var(--accent)';
     const bar = pct !== '–' ? `<div style="height:3px;background:${col};border-radius:2px;width:${Math.min(parseFloat(pct),100)}%;margin-top:4px;opacity:0.7;"></div>` : '';
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid var(--border);">
-      <div>
-        <div style="font-size:0.82rem;font-weight:500;color:${col};">${cat}</div>
-        ${bar}
-      </div>
+      <div><div style="font-size:0.82rem;font-weight:500;color:${col};">${cat}</div>${bar}</div>
       <div style="text-align:right;">
         <div style="font-size:0.85rem;font-weight:600;">${fmt.format(amt)}</div>
         ${pct !== '–' ? `<div style="font-size:0.72rem;color:var(--muted);">${pct}%</div>` : ''}
@@ -1187,71 +1305,36 @@ function renderCategoryBreakdown(bycat, totalExpenses) {
   }).join('');
 }
 
+// ── Charts ────────────────────────────────────────────────────────────────────
 function destroyChart(id) {
   if (charts[id]) { charts[id].destroy(); delete charts[id]; }
-  // Replace canvas element to clear any stale state
   const canvas = document.getElementById('chart-' + id);
-  if (canvas) {
-    const newCanvas = document.createElement('canvas');
-    newCanvas.id = 'chart-' + id;
-    canvas.parentNode.replaceChild(newCanvas, canvas);
-  }
+  if (canvas) { const n = document.createElement('canvas'); n.id = 'chart-' + id; canvas.parentNode.replaceChild(n, canvas); }
 }
-
-const chartDefaults = {
-  color: '#8892aa',
-  plugins: { legend: { labels: { color: '#8892aa', font: { size: 11 } } } },
-};
 
 function drawCategoryChart(breakdown) {
   destroyChart('category');
-  const labels = Object.keys(breakdown);
-  const values = Object.values(breakdown);
+  const labels = Object.keys(breakdown), values = Object.values(breakdown);
   if (!labels.length) return;
-
-  const ctx = document.getElementById('chart-category').getContext('2d');
-  charts['category'] = new Chart(ctx, {
+  charts['category'] = new Chart(document.getElementById('chart-category').getContext('2d'), {
     type: 'doughnut',
-    data: {
-      labels,
-      datasets: [{
-        data: values,
-        backgroundColor: ['#6c63ff','#4ecca3','#ff6b6b','#ffd166','#a78bfa','#34d399','#f87171','#fb923c'],
-        borderWidth: 0,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { color: '#8892aa', font: { size: 11 }, padding: 12 } },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt.format(ctx.parsed)}` } }
-      }
-    }
+    data: { labels, datasets: [{ data: values, backgroundColor: ['#6c63ff','#4ecca3','#ff6b6b','#ffd166','#a78bfa','#34d399','#f87171','#fb923c'], borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { color: '#8892aa', font: { size: 11 }, padding: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt.format(ctx.parsed)}` } } } }
   });
 }
 
 function drawMonthlyChart(monthly) {
   destroyChart('monthly');
   if (!monthly.length) return;
-
-  const labels   = monthly.map(m => m.month);
-  const income   = monthly.map(m => m.income   ?? 0);
-  const expenses = monthly.map(m => m.expenses ?? 0);
-
-  const ctx = document.getElementById('chart-monthly').getContext('2d');
-  charts['monthly'] = new Chart(ctx, {
+  charts['monthly'] = new Chart(document.getElementById('chart-monthly').getContext('2d'), {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Income',   data: income,   backgroundColor: 'rgba(78,204,163,0.7)', borderRadius: 4 },
-        { label: 'Expenses', data: expenses, backgroundColor: 'rgba(255,107,107,0.7)', borderRadius: 4 },
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
+    data: { labels: monthly.map(m => m.month), datasets: [
+      { label: 'Income',   data: monthly.map(m => m.income   ?? 0), backgroundColor: 'rgba(78,204,163,0.7)',  borderRadius: 4 },
+      { label: 'Expenses', data: monthly.map(m => m.expenses ?? 0), backgroundColor: 'rgba(255,107,107,0.7)', borderRadius: 4 },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false,
       plugins: { legend: { labels: { color: '#8892aa', font: { size: 11 } } } },
       scales: {
         x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } },
@@ -1264,34 +1347,13 @@ function drawMonthlyChart(monthly) {
 function drawVendorChart(vendors) {
   destroyChart('vendors');
   if (!vendors.length) return;
-
-  const labels = vendors.map(v => v.vendor || v.name);
-  const values = vendors.map(v => v.total_spend ?? v.count ?? 0);
-
-  const ctx = document.getElementById('chart-vendors').getContext('2d');
-  charts['vendors'] = new Chart(ctx, {
+  charts['vendors'] = new Chart(document.getElementById('chart-vendors').getContext('2d'), {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Total Spend ($)',
-        data: values,
-        backgroundColor: 'rgba(108,99,255,0.7)',
-        borderRadius: 4,
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: ctx => ' $' + ctx.parsed.x.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})
-          }
-        }
-      },
+    data: { labels: vendors.map(v => v.vendor || v.name),
+      datasets: [{ label: 'Total Spend ($)', data: vendors.map(v => v.total_spend ?? 0), backgroundColor: 'rgba(108,99,255,0.7)', borderRadius: 4 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.x.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) } } },
       scales: {
         x: { ticks: { color: '#8892aa', callback: v => '$' + v.toLocaleString() }, grid: { color: '#2e3248' } },
         y: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } }
@@ -1300,28 +1362,228 @@ function drawVendorChart(vendors) {
   });
 }
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
+function drawTrendChart(monthly) {
+  destroyChart('trend');
+  if (!monthly.length) return;
+  let cum = 0;
+  const cumNet      = monthly.map(m => { cum += (m.income - m.expenses); return parseFloat(cum.toFixed(2)); });
+  const netPerMonth = monthly.map(m => parseFloat((m.income - m.expenses).toFixed(2)));
+  charts['trend'] = new Chart(document.getElementById('chart-trend').getContext('2d'), {
+    type: 'line',
+    data: { labels: monthly.map(m => m.month), datasets: [
+      { label: 'Net per Month',   data: netPerMonth, borderColor: 'rgba(108,99,255,0.9)', backgroundColor: 'rgba(108,99,255,0.1)', fill: true,      tension: 0.4, pointRadius: 4, pointBackgroundColor: 'rgba(108,99,255,1)' },
+      { label: 'Cumulative Net',  data: cumNet,      borderColor: 'rgba(78,204,163,0.9)', backgroundColor: 'transparent',          borderDash:[5,4], tension: 0.4, pointRadius: 3, pointBackgroundColor: 'rgba(78,204,163,1)'  },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: '#8892aa', font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } },
+        y: { ticks: { color: '#8892aa', callback: v => '$' + v.toLocaleString() }, grid: { color: '#2e3248' } }
+      }
+    }
+  });
+}
+
+// ── Budget goals ──────────────────────────────────────────────────────────────
+const EXPENSE_CATS = ['Utilities','Food','Medical','Insurance','Tax','Rent','Travel','Shopping','Subscription','Other'];
+
+async function loadBudgetGoals() {
+  try {
+    const data = await apiFetch('/budget/goals');
+    budgetGoals = {};
+    (data.goals || []).forEach(g => { budgetGoals[g.category] = parseFloat(g.monthly_limit); });
+    renderBudgetGoals();
+  } catch { /* non-fatal */ }
+}
+
+function renderBudgetGoals() {
+  const el    = document.getElementById('budget-goals-list');
+  if (!el) return;
+  const goals = Object.entries(budgetGoals);
+  if (!goals.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;padding:0.5rem 0;">No budget goals set yet. Click "Set Goals" to add one.</div>';
+    return;
+  }
+  el.innerHTML = goals.sort((a,b) => a[0].localeCompare(b[0])).map(([cat, limit]) => {
+    const spent = dashByCat[cat] || 0;
+    const pct   = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
+    const over  = spent > limit;
+    const color = over ? 'var(--danger)' : pct > 80 ? 'var(--warn)' : 'var(--accent2)';
+    return `<div class="budget-row">
+      <div class="budget-cat">${cat}</div>
+      <div class="budget-bar-wrap"><div class="budget-bar" style="width:${pct}%;background:${color};"></div></div>
+      <div class="budget-meta ${over ? 'budget-over' : ''}">
+        ${fmt.format(spent)} / ${fmt.format(limit)}${over ? ' ⚠️ Over!' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openBudgetModal() {
+  const list = document.getElementById('budget-edit-list');
+  list.innerHTML = EXPENSE_CATS.map(cat => `
+    <div class="budget-edit-row">
+      <div class="cat-label">${cat}</div>
+      <input type="number" id="bg-${cat}" placeholder="No limit" step="1" min="0"
+             value="${budgetGoals[cat] || ''}" />
+      <span style="font-size:0.78rem;color:var(--muted);">/mo</span>
+    </div>`).join('');
+  document.getElementById('budget-modal-overlay').classList.add('open');
+}
+
+function closeBudgetModal(e) {
+  if (!e || e.target === document.getElementById('budget-modal-overlay') || e === undefined)
+    document.getElementById('budget-modal-overlay').classList.remove('open');
+}
+
+async function saveBudgetGoals() {
+  for (const cat of EXPENSE_CATS) {
+    const val = parseFloat(document.getElementById('bg-' + cat).value);
+    if (val > 0) {
+      await apiFetch('/budget/goals', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ category: cat, monthly_limit: val }),
+      }).catch(() => {});
+    } else if (budgetGoals[cat]) {
+      await apiFetch(`/budget/goals/${encodeURIComponent(cat)}`, { method: 'DELETE' }).catch(() => {});
+    }
+  }
+  closeBudgetModal();
+  await loadBudgetGoals();
+}
+
+// ── Email notification settings ───────────────────────────────────────────────
+function openEmailSettings() {
+  document.getElementById('email-input').value    = currentEmail || '';
+  document.getElementById('email-save-msg').style.display = 'none';
+  document.getElementById('email-modal-overlay').classList.add('open');
+}
+function closeEmailSettings(e) {
+  if (!e || e.target === document.getElementById('email-modal-overlay') || e === undefined)
+    document.getElementById('email-modal-overlay').classList.remove('open');
+}
+async function saveEmail() {
+  const email = document.getElementById('email-input').value.trim();
+  const msgEl = document.getElementById('email-save-msg');
+  try {
+    await apiFetch('/auth/email', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email }),
+    });
+    currentEmail = email;
+    msgEl.style.display = ''; msgEl.style.color = 'var(--accent2)';
+    msgEl.textContent = email ? '✓ Email saved. Notifications enabled.' : '✓ Notifications disabled.';
+    setTimeout(closeEmailSettings, 1500);
+  } catch (e) {
+    msgEl.style.display = ''; msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = '✗ ' + e.message;
+  }
+}
+
+// ── PDF report export ─────────────────────────────────────────────────────────
+async function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  if (!jsPDF) { alert('jsPDF not loaded'); return; }
+  const month = document.getElementById('month-filter').value;
+  let summaryData;
+  try { summaryData = await apiFetch('/dashboard/summary' + (month ? `?month=${month}` : '')); }
+  catch (e) { alert('Could not load data: ' + e.message); return; }
+
+  const income   = summaryData.total_income   || 0;
+  const expenses = summaryData.total_expenses || 0;
+  const net      = income - expenses;
+  const monthly  = summaryData.monthly_cashflow || [];
+  const bycat    = summaryData.by_category || {};
+  const vendors  = summaryData.top_vendors  || [];
+  const fmtN     = n => '$' + parseFloat(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const period   = month || 'All Time';
+  const today    = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+  const doc      = new jsPDF({ unit: 'mm', format: 'a4' });
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(108, 99, 255);
+  doc.text('FinSight', 14, 18);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(120, 120, 140);
+  doc.text('Financial Document Intelligence', 14, 24);
+  doc.text(`Report period: ${period}   ·   Generated: ${today}`, 14, 30);
+  doc.setDrawColor(200, 200, 220); doc.line(14, 33, 196, 33);
+
+  const boxes = [
+    { label: 'Total Income',   value: fmtN(income),   color: [78, 204, 163] },
+    { label: 'Total Expenses', value: fmtN(expenses), color: [255, 107, 107] },
+    { label: 'Net Cash Flow',  value: fmtN(net),      color: net >= 0 ? [78,204,163] : [255,107,107] },
+    { label: 'Savings Rate',   value: income > 0 ? (((net/income)*100).toFixed(1)+'%') : '–', color: [255, 209, 102] },
+  ];
+  boxes.forEach((b, i) => {
+    const x = 14 + i * 46;
+    doc.setFillColor(245, 245, 252); doc.roundedRect(x, 40, 42, 20, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...b.color);
+    doc.text(b.value, x + 21, 52, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(120, 120, 140);
+    doc.text(b.label, x + 21, 57, { align: 'center' });
+  });
+
+  const catRows = Object.entries(bycat).sort((a,b)=>b[1]-a[1]).map(([cat, amt]) => {
+    const pct = expenses > 0 && cat !== 'Income' ? ((amt/expenses)*100).toFixed(1)+'%' : '–';
+    return [cat, fmtN(amt), pct];
+  });
+  if (catRows.length) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(50, 50, 70);
+    doc.text('Spending by Category', 14, 70);
+    doc.autoTable({ startY: 74, head: [['Category','Amount','% of Expenses']], body: catRows,
+      styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [108, 99, 255], textColor: 255 },
+      alternateRowStyles: { fillColor: [248, 248, 252] }, margin: { left: 14, right: 14 } });
+  }
+
+  if (vendors.length) {
+    const y = (doc.lastAutoTable?.finalY || 120) + 10;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(50, 50, 70);
+    doc.text('Top Vendors by Spend', 14, y);
+    doc.autoTable({ startY: y + 4, head: [['Vendor','Documents','Total Spend']],
+      body: vendors.map(v => [v.vendor||'–', v.count||0, fmtN(v.total_spend||0)]),
+      styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [78, 204, 163], textColor: 255 },
+      alternateRowStyles: { fillColor: [248, 248, 252] }, margin: { left: 14, right: 14 } });
+  }
+
+  if (monthly.length) {
+    doc.addPage();
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(50, 50, 70);
+    doc.text('Monthly Cash Flow', 14, 20);
+    doc.autoTable({ startY: 24, head: [['Month','Income','Expenses','Net']],
+      body: monthly.map(m => [m.month, fmtN(m.income||0), fmtN(m.expenses||0), fmtN((m.income||0)-(m.expenses||0))]),
+      styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [108, 99, 255], textColor: 255 },
+      alternateRowStyles: { fillColor: [248, 248, 252] }, columnStyles: { 3: { fontStyle: 'bold' } },
+      margin: { left: 14, right: 14 } });
+  }
+
+  const pages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p); doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(160,160,180);
+    doc.text(`FinSight — Page ${p} of ${pages}`, 14, 292);
+    doc.text('FinSight Financial Document Intelligence', 196, 292, { align: 'right' });
+  }
+
+  doc.save(`finsight-report-${period.replace(/\s+/g,'-')}.pdf`);
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
 function showAuthTab(tab) {
   document.querySelectorAll('.auth-tab').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === tab));
   document.getElementById('auth-form-login').style.display    = tab === 'login'    ? '' : 'none';
   document.getElementById('auth-form-register').style.display = tab === 'register' ? '' : 'none';
   document.getElementById('auth-error').style.display = 'none';
 }
-
 function showAuthError(msg) {
-  const el = document.getElementById('auth-error');
-  el.textContent = msg;
-  el.style.display = 'block';
+  const el = document.getElementById('auth-error'); el.textContent = msg; el.style.display = 'block';
 }
-
 function onLoggedIn(user) {
   document.getElementById('auth-overlay').classList.remove('open');
-  document.getElementById('username-badge').textContent = '👤 ' + user.username;
+  document.getElementById('username-badge').textContent  = '👤 ' + user.username;
   document.getElementById('username-badge').style.display = '';
-  document.getElementById('logout-btn').style.display = '';
+  document.getElementById('email-bell').style.display     = 'inline';
+  document.getElementById('logout-btn').style.display     = '';
+  currentEmail = user.email || '';
   loadRecent();
 }
-
 async function doLogin() {
   const username = document.getElementById('login-user').value.trim();
   const password = document.getElementById('login-pass').value;
@@ -1334,103 +1596,48 @@ async function doLogin() {
     onLoggedIn(user);
   } catch (e) { showAuthError(e.message); }
 }
-
 async function doRegister() {
   const username = document.getElementById('reg-user').value.trim();
   const password = document.getElementById('reg-pass').value;
+  const email    = document.getElementById('reg-email').value.trim();
   if (!username || !password) return showAuthError('Enter username and password');
   try {
     const user = await apiFetch('/auth/register', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({username, password}), credentials: 'include'
+      body: JSON.stringify({username, password, email}), credentials: 'include'
     });
     onLoggedIn(user);
   } catch (e) { showAuthError(e.message); }
 }
-
 async function doLogout() {
   await apiFetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
   document.getElementById('auth-overlay').classList.add('open');
   document.getElementById('username-badge').style.display = 'none';
-  document.getElementById('logout-btn').style.display = 'none';
+  document.getElementById('email-bell').style.display     = 'none';
+  document.getElementById('logout-btn').style.display     = 'none';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
+  currentEmail = '';
 }
 
-function drawTrendChart(monthly) {
-  destroyChart('trend');
-  if (!monthly.length) return;
-  const labels = monthly.map(m => m.month);
-  // Cumulative net
-  let cum = 0;
-  const cumNet = monthly.map(m => { cum += (m.income - m.expenses); return parseFloat(cum.toFixed(2)); });
-  const netPerMonth = monthly.map(m => parseFloat((m.income - m.expenses).toFixed(2)));
-
-  const ctx = document.getElementById('chart-trend').getContext('2d');
-  charts['trend'] = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Net per Month',
-          data: netPerMonth,
-          borderColor: 'rgba(108,99,255,0.9)',
-          backgroundColor: 'rgba(108,99,255,0.1)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 4,
-          pointBackgroundColor: 'rgba(108,99,255,1)',
-        },
-        {
-          label: 'Cumulative Net',
-          data: cumNet,
-          borderColor: 'rgba(78,204,163,0.9)',
-          backgroundColor: 'transparent',
-          borderDash: [5, 4],
-          tension: 0.4,
-          pointRadius: 3,
-          pointBackgroundColor: 'rgba(78,204,163,1)',
-        },
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { labels: { color: '#8892aa', font: { size: 11 } } } },
-      scales: {
-        x: { ticks: { color: '#8892aa' }, grid: { color: '#2e3248' } },
-        y: {
-          ticks: { color: '#8892aa', callback: v => '$' + v.toLocaleString() },
-          grid: { color: '#2e3248' }
-        }
-      }
-    }
-  });
-}
-
-// ── Reprocess all documents ──────────────────────────────────────────────────
+// ── Reprocess all ─────────────────────────────────────────────────────────────
 async function reprocessAll() {
   const btn = document.getElementById('reprocess-all-btn');
   if (!confirm('Re-run OCR on all your documents to fix extracted amounts?\n\nThis may take a minute.')) return;
-  btn.disabled = true;
-  btn.textContent = '↻ Reprocessing…';
+  btn.disabled = true; btn.textContent = '↻ Reprocessing…';
   try {
     const data = await apiFetch('/documents?limit=200&offset=0');
-    const docs = data.documents || [];
-    let done = 0;
+    const docs  = data.documents || [];
+    let done    = 0;
     for (const doc of docs) {
       await apiFetch(`/documents/${doc.id}/reprocess`, { method: 'POST' }).catch(() => {});
-      done++;
-      btn.textContent = `↻ ${done}/${docs.length}…`;
+      done++; btn.textContent = `↻ ${done}/${docs.length}…`;
     }
     btn.textContent = '✓ Done';
     setTimeout(() => { btn.disabled = false; btn.textContent = '↻ Reprocess All'; }, 3000);
     loadDocuments();
   } catch (e) {
-    btn.disabled = false;
-    btn.textContent = '↻ Reprocess All';
+    btn.disabled = false; btn.textContent = '↻ Reprocess All';
     alert('Reprocess failed: ' + e.message);
   }
 }
@@ -1440,24 +1647,18 @@ async function deleteDoc(id, filename) {
   if (!confirm(`Delete "${filename}"?\n\nThis will remove the file from S3 and all extracted data. This cannot be undone.`)) return;
   try {
     await apiFetch(`/documents/${id}`, { method: 'DELETE' });
-    closeModal();
-    loadRecent();
-    loadDocuments();
-  } catch (e) {
-    alert(`Delete failed: ${e.message}`);
-  }
+    closeModal(); loadRecent(); loadDocuments();
+  } catch (e) { alert(`Delete failed: ${e.message}`); }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-// Enter key on login/register forms
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
-  if (document.getElementById('auth-form-login').style.display !== 'none') doLogin();
-  else doRegister();
+  const loginForm = document.getElementById('auth-form-login');
+  if (loginForm && loginForm.style.display !== 'none') doLogin(); else doRegister();
 });
 
 checkHealth();
-// Check if already logged in (existing session cookie)
 apiFetch('/auth/me', { credentials: 'include' })
   .then(user => onLoggedIn(user))
   .catch(() => { /* not logged in — overlay stays open */ });

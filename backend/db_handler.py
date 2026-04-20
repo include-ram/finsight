@@ -38,6 +38,7 @@ class DBHandler:
         self._min_conn = min_conn
         self._max_conn = max_conn
         self._init_pool()
+        self._ensure_tables()
 
     # ── Pool management ───────────────────────────────────────────────────────
     def _init_pool(self) -> None:
@@ -123,6 +124,28 @@ class DBHandler:
         finally:
             self._release(conn)
 
+    # ── Schema migrations ─────────────────────────────────────────────────────
+    def _ensure_tables(self) -> None:
+        """Create any tables/columns that may not exist yet (safe to run multiple times)."""
+        if self._pool is None:
+            return
+        try:
+            self._execute("""
+                CREATE TABLE IF NOT EXISTS budget_goals (
+                    user_id  VARCHAR(64) NOT NULL,
+                    category VARCHAR(100) NOT NULL,
+                    monthly_limit NUMERIC(12,2) NOT NULL,
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    PRIMARY KEY (user_id, category)
+                )
+            """)
+            self._execute("""
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)
+            """)
+            logger.info("Schema ensured (budget_goals, users.email)")
+        except Exception as exc:
+            logger.warning("_ensure_tables skipped: %s", exc)
+
     # ── Document CRUD ─────────────────────────────────────────────────────────
     def insert_document(
         self,
@@ -174,23 +197,63 @@ class DBHandler:
         limit: int = 50,
         offset: int = 0,
         user_id: str | None = None,
+        search: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        min_amount: float | None = None,
+        max_amount: float | None = None,
     ) -> list[dict]:
-        """Fetch a paginated list of documents scoped to a user."""
+        """Fetch a paginated list of documents scoped to a user with optional filters."""
+        clauses = ["1=1"]
         p: list = []
-        if user_id: p.append(user_id)
-        if status:  p.append(status)
+        if user_id:
+            clauses.append("d.user_id = %s"); p.append(user_id)
+        if status:
+            clauses.append("d.status = %s"); p.append(status)
+        if search:
+            clauses.append(
+                "(d.filename ILIKE %s OR EXISTS ("
+                "  SELECT 1 FROM extracted_data ed"
+                "  WHERE ed.document_id = d.id AND ed.field_name = 'vendor_name'"
+                "  AND ed.field_value ILIKE %s))"
+            )
+            like = f"%{search}%"
+            p += [like, like]
+        if date_from:
+            clauses.append("d.upload_date >= %s"); p.append(date_from)
+        if date_to:
+            clauses.append("d.upload_date <= %s"); p.append(date_to + " 23:59:59")
+        if min_amount is not None:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM extracted_data ea WHERE ea.document_id = d.id"
+                " AND ea.field_name = 'total_amount'"
+                " AND ea.field_value ~ '^[0-9]+(\\.[0-9]+)?$'"
+                " AND CAST(ea.field_value AS NUMERIC) >= %s)"
+            ); p.append(min_amount)
+        if max_amount is not None:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM extracted_data ea WHERE ea.document_id = d.id"
+                " AND ea.field_name = 'total_amount'"
+                " AND ea.field_value ~ '^[0-9]+(\\.[0-9]+)?$'"
+                " AND CAST(ea.field_value AS NUMERIC) <= %s)"
+            ); p.append(max_amount)
+        where = " AND ".join(clauses)
         p += [limit, offset]
         rows = self._execute(
             f"""
-            SELECT d.*, c.category, c.confidence AS category_confidence
+            SELECT d.*, c.category, c.confidence AS category_confidence,
+                   ea.field_value AS total_amount
             FROM documents d
             LEFT JOIN LATERAL (
                 SELECT category, confidence FROM categories
                 WHERE document_id = d.id ORDER BY confidence DESC LIMIT 1
             ) c ON TRUE
-            WHERE 1=1
-            {"AND d.user_id = %s" if user_id else ""}
-            {"AND d.status = %s" if status else ""}
+            LEFT JOIN LATERAL (
+                SELECT field_value FROM extracted_data
+                WHERE document_id = d.id AND field_name = 'total_amount'
+                ORDER BY id DESC LIMIT 1
+            ) ea ON TRUE
+            WHERE {where}
             ORDER BY d.upload_date DESC
             LIMIT %s OFFSET %s
             """,
@@ -199,13 +262,53 @@ class DBHandler:
         )
         return [dict(r) for r in rows] if rows else []
 
-    def count_documents(self, status: str | None = None, user_id: str | None = None) -> int:
-        """Return the total count of documents for a user."""
-        p = [v for v in [user_id, status] if v is not None]
+    def count_documents(
+        self,
+        status: str | None = None,
+        user_id: str | None = None,
+        search: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        min_amount: float | None = None,
+        max_amount: float | None = None,
+    ) -> int:
+        """Return the total count of documents for a user with optional filters."""
+        clauses = ["1=1"]
+        p: list = []
+        if user_id:
+            clauses.append("d.user_id = %s"); p.append(user_id)
+        if status:
+            clauses.append("d.status = %s"); p.append(status)
+        if search:
+            clauses.append(
+                "(d.filename ILIKE %s OR EXISTS ("
+                "  SELECT 1 FROM extracted_data ed"
+                "  WHERE ed.document_id = d.id AND ed.field_name = 'vendor_name'"
+                "  AND ed.field_value ILIKE %s))"
+            )
+            like = f"%{search}%"
+            p += [like, like]
+        if date_from:
+            clauses.append("d.upload_date >= %s"); p.append(date_from)
+        if date_to:
+            clauses.append("d.upload_date <= %s"); p.append(date_to + " 23:59:59")
+        if min_amount is not None:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM extracted_data ea WHERE ea.document_id = d.id"
+                " AND ea.field_name = 'total_amount'"
+                " AND ea.field_value ~ '^[0-9]+(\\.[0-9]+)?$'"
+                " AND CAST(ea.field_value AS NUMERIC) >= %s)"
+            ); p.append(min_amount)
+        if max_amount is not None:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM extracted_data ea WHERE ea.document_id = d.id"
+                " AND ea.field_name = 'total_amount'"
+                " AND ea.field_value ~ '^[0-9]+(\\.[0-9]+)?$'"
+                " AND CAST(ea.field_value AS NUMERIC) <= %s)"
+            ); p.append(max_amount)
+        where = " AND ".join(clauses)
         row = self._execute(
-            f"""SELECT COUNT(*) AS cnt FROM documents WHERE 1=1
-            {"AND user_id = %s" if user_id else ""}
-            {"AND status = %s" if status else ""}""",
+            f"SELECT COUNT(*) AS cnt FROM documents d WHERE {where}",
             tuple(p),
             fetch="one",
         )
@@ -264,6 +367,42 @@ class DBHandler:
             fetch="all",
         )
         return [dict(r) for r in rows] if rows else []
+
+    # ── Manual field / category edits ────────────────────────────────────────
+    def update_extracted_field(self, document_id: str, field_name: str, field_value: str) -> None:
+        """Replace (or insert) a single extracted field with a user-supplied value."""
+        self._execute(
+            "DELETE FROM extracted_data WHERE document_id = %s AND field_name = %s",
+            (document_id, field_name),
+        )
+        self._execute(
+            "INSERT INTO extracted_data (document_id, field_name, field_value, confidence)"
+            " VALUES (%s, %s, %s, 1.0)",
+            (document_id, field_name, field_value),
+        )
+
+    # ── Budget goals CRUD ─────────────────────────────────────────────────────
+    def get_budget_goals(self, user_id: str) -> list[dict]:
+        rows = self._execute(
+            "SELECT category, monthly_limit FROM budget_goals WHERE user_id = %s ORDER BY category",
+            (user_id,), fetch="all",
+        )
+        return [dict(r) for r in rows] if rows else []
+
+    def upsert_budget_goal(self, user_id: str, category: str, monthly_limit: float) -> None:
+        self._execute(
+            """INSERT INTO budget_goals (user_id, category, monthly_limit, updated_at)
+               VALUES (%s, %s, %s, NOW())
+               ON CONFLICT (user_id, category) DO UPDATE
+                 SET monthly_limit = EXCLUDED.monthly_limit, updated_at = NOW()""",
+            (user_id, category, monthly_limit),
+        )
+
+    def delete_budget_goal(self, user_id: str, category: str) -> None:
+        self._execute(
+            "DELETE FROM budget_goals WHERE user_id = %s AND category = %s",
+            (user_id, category),
+        )
 
     # ── Summary / analytics ───────────────────────────────────────────────────
     def get_summary_stats(self, month: str | None = None, user_id: str | None = None) -> dict[str, Any]:

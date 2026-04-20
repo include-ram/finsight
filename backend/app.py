@@ -19,6 +19,7 @@ from s3_handler import S3Handler
 from db_handler import DBHandler
 from ocr_processor import OCRProcessor
 from categorizer import Categorizer
+from ses_handler import SESHandler
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 load_dotenv()
@@ -38,10 +39,11 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "finsight-dev-secret-change-in-pr
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "tiff", "bmp"}
 
 # Singleton service objects (created once at startup)
-s3 = S3Handler()
-db = DBHandler()
+s3  = S3Handler()
+db  = DBHandler()
 ocr = OCRProcessor()
 cat = Categorizer()
+ses = SESHandler()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -73,6 +75,7 @@ def register():
     data = request.get_json(force=True)
     username = (data.get("username") or "").strip().lower()
     password = data.get("password") or ""
+    email    = (data.get("email") or "").strip().lower() or None
     if not username or not password:
         return error_response("Username and password are required")
     if len(username) < 3:
@@ -85,12 +88,14 @@ def register():
             return error_response("Username already taken")
         pw_hash = generate_password_hash(password)
         row = db._execute(
-            "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id, username",
-            (username, pw_hash), fetch="one"
+            "INSERT INTO users (username, password_hash, email) VALUES (%s, %s, %s)"
+            " RETURNING id, username, email",
+            (username, pw_hash, email), fetch="one"
         )
         session["user_id"] = str(row["id"])
         session["username"] = row["username"]
-        return jsonify({"id": str(row["id"]), "username": row["username"]}), 201
+        session["email"]    = row.get("email") or ""
+        return jsonify({"id": str(row["id"]), "username": row["username"], "email": row.get("email") or ""}), 201
     except Exception as exc:
         logger.exception("Register failed")
         return error_response(f"Registration failed: {exc}", 500)
@@ -102,12 +107,16 @@ def login():
     username = (data.get("username") or "").strip().lower()
     password = data.get("password") or ""
     try:
-        row = db._execute("SELECT id, username, password_hash FROM users WHERE username = %s", (username,), fetch="one")
+        row = db._execute(
+            "SELECT id, username, password_hash, email FROM users WHERE username = %s",
+            (username,), fetch="one"
+        )
         if not row or not check_password_hash(row["password_hash"], password):
             return error_response("Invalid username or password", 401)
-        session["user_id"] = str(row["id"])
+        session["user_id"]  = str(row["id"])
         session["username"] = row["username"]
-        return jsonify({"id": str(row["id"]), "username": row["username"]})
+        session["email"]    = row.get("email") or ""
+        return jsonify({"id": str(row["id"]), "username": row["username"], "email": row.get("email") or ""})
     except Exception as exc:
         logger.exception("Login failed")
         return error_response(f"Login failed: {exc}", 500)
@@ -123,7 +132,28 @@ def logout():
 def me():
     if "user_id" not in session:
         return error_response("Not authenticated", 401)
-    return jsonify({"id": session["user_id"], "username": session["username"]})
+    return jsonify({
+        "id": session["user_id"],
+        "username": session["username"],
+        "email": session.get("email", ""),
+    })
+
+
+@app.route("/auth/email", methods=["PUT"])
+@login_required
+def update_email():
+    """PUT /auth/email — update notification email for the current user."""
+    data  = request.get_json(force=True)
+    email = (data.get("email") or "").strip().lower() or None
+    try:
+        db._execute(
+            "UPDATE users SET email = %s WHERE id = %s",
+            (email, current_user_id()),
+        )
+        session["email"] = email or ""
+        return jsonify({"email": email or ""})
+    except Exception as exc:
+        return error_response(f"Failed to update email: {exc}", 500)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -234,7 +264,25 @@ def upload_document():
             207,
         )
 
-    # ── Step 4: Return completed record ─────────────────────────────────────
+    # ── Step 4: Send SES notification (non-blocking best-effort) ────────────
+    try:
+        user_email = session.get("email") or ""
+        if user_email:
+            fields_map = {f["field_name"]: f["field_value"] for f in db.get_extracted_data(doc_id)}
+            ses.send_upload_notification(
+                recipient=user_email,
+                username=session.get("username", ""),
+                doc_info={
+                    "filename": original_name,
+                    "category": category_result["category"],
+                    "amount":   fields_map.get("total_amount", "–"),
+                    "date":     fields_map.get("primary_date", "–"),
+                },
+            )
+    except Exception:
+        pass  # email failure must never break the upload response
+
+    # ── Step 5: Return completed record ─────────────────────────────────────
     doc = db.get_document_by_id(doc_id)
     return jsonify(doc), 201
 
@@ -314,13 +362,28 @@ def list_documents():
     GET /documents?status=completed&limit=50&offset=0
     Returns paginated list of all documents with their categories.
     """
-    status = request.args.get("status")
-    limit = int(request.args.get("limit", 50))
-    offset = int(request.args.get("offset", 0))
+    status     = request.args.get("status")
+    limit      = int(request.args.get("limit", 50))
+    offset     = int(request.args.get("offset", 0))
+    search     = request.args.get("search") or None
+    date_from  = request.args.get("date_from") or None
+    date_to    = request.args.get("date_to") or None
+    min_amount = float(request.args["min_amount"]) if request.args.get("min_amount") else None
+    max_amount = float(request.args["max_amount"]) if request.args.get("max_amount") else None
 
     try:
-        docs = db.get_all_documents(status=status, limit=limit, offset=offset, user_id=current_user_id())
-        total = db.count_documents(status=status, user_id=current_user_id())
+        kwargs = dict(
+            status=status, limit=limit, offset=offset,
+            user_id=current_user_id(), search=search,
+            date_from=date_from, date_to=date_to,
+            min_amount=min_amount, max_amount=max_amount,
+        )
+        docs  = db.get_all_documents(**kwargs)
+        total = db.count_documents(
+            status=status, user_id=current_user_id(), search=search,
+            date_from=date_from, date_to=date_to,
+            min_amount=min_amount, max_amount=max_amount,
+        )
         return jsonify({"total": total, "limit": limit, "offset": offset, "documents": docs})
     except Exception as exc:
         logger.exception("Failed to list documents")
@@ -473,6 +536,88 @@ def reprocess_document(doc_id: str):
     except Exception as exc:
         logger.exception("Reprocess failed for %s", doc_id)
         return error_response(f"Reprocess failed: {exc}", 500)
+
+
+# ── Manual category override ─────────────────────────────────────────────────
+@app.route("/documents/<doc_id>/category", methods=["PUT"])
+@login_required
+def update_category(doc_id: str):
+    """PUT /documents/<id>/category  Body: { "category": "Food" }"""
+    data = request.get_json(force=True)
+    category = (data.get("category") or "").strip()
+    if not category:
+        return error_response("category is required")
+    try:
+        doc = db.get_document_by_id(doc_id)
+        if not doc:
+            return error_response("Document not found", 404)
+        db.insert_category(doc_id, category, confidence=1.0)
+        return jsonify({"ok": True, "category": category})
+    except Exception as exc:
+        return error_response(f"Failed to update category: {exc}", 500)
+
+
+# ── Manual field edits ────────────────────────────────────────────────────────
+@app.route("/documents/<doc_id>/fields", methods=["PUT"])
+@login_required
+def update_fields(doc_id: str):
+    """PUT /documents/<id>/fields  Body: { "vendor_name": "...", "total_amount": "...", "primary_date": "..." }"""
+    data = request.get_json(force=True)
+    allowed = {"vendor_name", "total_amount", "primary_date"}
+    updates = {k: str(v).strip() for k, v in data.items() if k in allowed and v is not None}
+    if not updates:
+        return error_response("No valid fields provided")
+    try:
+        doc = db.get_document_by_id(doc_id)
+        if not doc:
+            return error_response("Document not found", 404)
+        for field_name, field_value in updates.items():
+            db.update_extracted_field(doc_id, field_name, field_value)
+        return jsonify({"ok": True, "updated": list(updates.keys())})
+    except Exception as exc:
+        return error_response(f"Failed to update fields: {exc}", 500)
+
+
+# ── Budget goals ──────────────────────────────────────────────────────────────
+@app.route("/budget/goals", methods=["GET"])
+@login_required
+def get_budget_goals():
+    try:
+        goals = db.get_budget_goals(current_user_id())
+        return jsonify({"goals": goals})
+    except Exception as exc:
+        return error_response(f"Failed to load budget goals: {exc}", 500)
+
+
+@app.route("/budget/goals", methods=["POST"])
+@login_required
+def upsert_budget_goal():
+    """POST /budget/goals  Body: { "category": "Food", "monthly_limit": 500 }"""
+    data = request.get_json(force=True)
+    category = (data.get("category") or "").strip()
+    try:
+        monthly_limit = float(data.get("monthly_limit", 0))
+    except (TypeError, ValueError):
+        return error_response("monthly_limit must be a number")
+    if not category:
+        return error_response("category is required")
+    if monthly_limit <= 0:
+        return error_response("monthly_limit must be positive")
+    try:
+        db.upsert_budget_goal(current_user_id(), category, monthly_limit)
+        return jsonify({"ok": True, "category": category, "monthly_limit": monthly_limit})
+    except Exception as exc:
+        return error_response(f"Failed to save budget goal: {exc}", 500)
+
+
+@app.route("/budget/goals/<category>", methods=["DELETE"])
+@login_required
+def delete_budget_goal(category: str):
+    try:
+        db.delete_budget_goal(current_user_id(), category)
+        return jsonify({"ok": True, "deleted": category})
+    except Exception as exc:
+        return error_response(f"Failed to delete budget goal: {exc}", 500)
 
 
 # ── Dashboard summary ─────────────────────────────────────────────────────────
